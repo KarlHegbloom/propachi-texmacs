@@ -5,21 +5,22 @@ set -e
 # Release-dance code goes here.
 
 # Constants
-PRODUCT="Propachi: CSL processor monkey-patch for Zotero (uppercase subtitles)"
+PRODUCT="Propachi: CSL processor monkey-patch for Zotero (texmacs support)"
 IS_BETA="false"
-FORK="propachi-upper"
+FORK="propachi-texmacs"
 BRANCH="master"
-CLIENT="propachi-upper"
+CLIENT="propachi-texmacs"
 VERSION_ROOT="1.1."
-SIGNED_STUB="propachi_patch_zotero_csl_processor_upper_ver-"
+SIGNED_STUB="propachi_patch_zotero_csl_processor_texmacs_ver-"
 
+# citeproc-js is a symlink to a git checkout containing my
+# fork of the citeproc-js with appropriate patches applied.
+#
 function xx-fetch-latest-processor () {
     cd "${SCRIPT_DIR}"
     cd ../citeproc-js
     ./test.py -B
-    mv citeproc.js "${SCRIPT_DIR}/chrome/content/citeproc.js"
-    sed -si 's/this\.development_extensions\.main_title_from_short_title = false/this\.development_extensions\.main_title_from_short_title = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
-    sed -si 's/this\.development_extensions\.uppercase_subtitles = false/this\.development_extensions\.uppercase_subtitles = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
+    cp -p citeproc.js "${SCRIPT_DIR}/chrome/content/citeproc.js"
     cd "${SCRIPT_DIR}"
 }
 
