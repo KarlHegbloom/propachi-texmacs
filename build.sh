@@ -26,6 +26,8 @@ function xx-fetch-latest-processor () {
 
 function xx-read-version-from-processor-code () {
     PROCESSOR_VERSION=$(cat "chrome/content/citeproc.js" | grep "PROCESSOR_VERSION:" | sed -e "s/.*PROCESSOR_VERSION:[^0-9]*\([.0-9]\+\).*/\1/")
+    echo PROCESSOR_VERSION:${PROCESSOR_VERSION}
+    VERSION=${PROCESSOR_VERSION}
 }
 
 function xx-make-the-bundle () {
