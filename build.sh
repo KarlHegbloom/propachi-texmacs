@@ -35,11 +35,11 @@ function xx-fetch-latest-processor () {
 #
 # This must be maintained separately to avoid attempting to redefine
 # constants.
-function xx-fetch-latest-integration-js () {
-    # cd "${SCRIPT_DIR}"
-    # cp -p ../zotero/chrome/content/zotero/xpcom/integration.js \
-    #    "${SCRIPT_DIR}/chrome/content/integration.js"
-}
+#function xx-fetch-latest-integration-js () {
+#    cd "${SCRIPT_DIR}"
+#    cp -p ../zotero/chrome/content/zotero/xpcom/integration.js \
+#       "${SCRIPT_DIR}/chrome/content/integration.js"
+#}
 
 function xx-read-version-from-processor-code () {
     PROCESSOR_VERSION=$(cat "chrome/content/citeproc.js" | grep "PROCESSOR_VERSION:" | sed -e "s/.*PROCESSOR_VERSION:[^0-9]*\([.0-9]\+\).*/\1/")
@@ -67,6 +67,7 @@ function xx-make-the-bundle () {
 
 function build-the-plugin () {
 	set-install-version
+        # xx-fetch-latest-integration-js
         xx-fetch-latest-processor
         xx-read-version-from-processor-code
         xx-make-the-bundle

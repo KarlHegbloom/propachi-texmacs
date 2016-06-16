@@ -1,7 +1,6 @@
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 var Zotero;
 var oldProcessor;
-var oldIntegration;
 
 var prefOutputFormat; // "integration.outputFormat"
 var prefMaxMaxOffset; // "integration.maxmaxOffset"
@@ -31,34 +30,264 @@ function replaceProcessor (Zotero) {
     Zotero.CiteProc.CSL = CSL;
 }
 
-function replaceIntegration (Zotero) {
-    oldIntegration = Zotero.Integration;
-    Cu.import("resource://gre/modules/Services.jsm");
-    Services.scriptloader.loadSubScript("chrome://propachi/content/integration.js", this, "UTF-8");
-    if(!Zotero.isConnector) {
-        // Initially called in zotero.js from inside _initFull() at
-        // the end of init() when not loading in connector mode. When
-        // Zotero debugging is on, init() prints "Loading in full
-        // mode" just before calling _initFull().
-        //
-        // This happens right after Zotero.Styles.preinit() is called,
-        // and just before Zotero.Server.init() and Zotero.Sync.init().
-        //
-        // I think this should work fine because of (a) the low number
-        // of references to Zotero.Integration from within the entire
-        // Zotero program. It is well isolated and no references are
-        // being created or kept around until after startup is done
-        // and a program connects to the integration port, etc. (b)
-        // Nothing initialized after the Zotero.Integration refers
-        // back to it during the initialization process.
-        Zotero.Integration.init();
-        //
-        prefOutputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
-        Zotero.Prefs.set("integration.outputFormat", prefOutputFormat);
-        prefMaxMaxOffset = Zotero.Prefs.get("integration.maxmaxOffset") || 16;
-        Zotero.Prefs.set("integration.maxmaxOffset", prefMaxMaxOffset);
-    }
+function monkeypatchIntegration (Zotero) {
+    ////////////////////////////////////////////////////////////////////////////
+    // From: https://www.npmjs.com/package/monkeypatch
+    //
+    // npm install monkeypatch
+    //
+    //module.exports = function(obj, method, handler, context) {
+    
+    var propachi_npm_monkeypatch = function(obj, method, handler, context) {
+        var original = obj[method];
+
+        // Unpatch first if already patched.
+        if (original.unpatch) {
+            original = original.unpatch();
+        }
+
+        // Patch the function.
+        obj[method] = function() {
+            var ctx  = context || this;
+            var args = [].slice.call(arguments);
+            args.unshift(original.bind(ctx));
+            return handler.apply(ctx, args);
+        };
+
+        // Provide "unpatch" function.
+        obj[method].unpatch = function() {
+            obj[method] = original;
+            return original;
+        };
+
+        // Return the original.
+        return original;
+    };
+    //
+    // Examples:
+    //
+    // Patching a function
+    //
+    // Monkeypatch Date.now() 
+    // propachi_npm_monkeypatch(Date, 'now', function(original) {
+    //   // Round to 15-minute interval. 
+    //   var ts = original();
+    //   return ts - (ts % 900000);
+    // });
+    //
+    // var timestamp = Date.now(); // returns a rounded timestamp
+    //
+    //
+    // Patching an instance method
+    //
+    // Monkeypatch Date#getTime() 
+    // monkeypatch(Date.prototype, 'getTime', function(original) {
+    //   // Round to 15-minute interval. 
+    //   var ts = original();
+    //   return ts - (ts % 900000);
+    // });
+    //
+    // var date      = new Date();
+    // var timestamp = date.getTime(); // returns a rounded timestamp
+    //
+    //
+    // Argument handling
+    //
+    // Monkeypatch Date#setTime() 
+    // monkeypatch(Date.prototype, 'setTime', function(original, ts) {
+    //   // Round to 15-minute interval. 
+    //   ts = ts - (ts % 900000);
+    //   // Call the original. 
+    //   return original(ts);
+    // });
+    // 
+    // var date = new Date();
+    // date.setTime(date.getTime()); // set to a rounded timestamp
+    //
+    //
+    // Unpatching
+    // Monkeypatch Date.now() 
+    // monkeypatch(Date, 'now', function() { return 143942400000; });
+    //
+    // console.log(Date.now()); // logs 143942400000 
+    //
+    // Date.now.unpatch();
+    // 
+    // console.log(Date.now()); // logs current time
+
+
+    // Ideas: Instead of trying to patch the integration.js, how about
+    // overriding style.processCitationCluster(citation, citationsPre,
+    // citationsPost); to make it munge the resulting formatted citations
+    // between it and Zotero.Integration.Session.prototype.formatCitation
+    // ?
+    //
+    // Also need to munge the results from getting the bibliography, so
+    // style.makeBibliography(); ... it's output is modified to remove
+    // ommittedItems and to replace items with customBibliographyText, so
+    // what happens if I modify it between style.makeBibliography and
+    // Zotero.Integration.Session.prototype.getBibliography()? Ok, it's
+    // itemsToRemove is an array of indices, so as long as I don't remove
+    // any of them, it should work fine no matter what I do to the text of
+    // each item.
+
+    // Q: How to change it's outputFormat, and to prevent it from putting
+    // that {\\rtf... around it?
+
+    // If I monkeypatch style.setOutputFormat(outputFormat); then how can
+    // I ensure that it only changes it in the context of integration.js,
+    // and not globally for every use of the citeproc within Juris-M?
+    //
+    // I think I can monkeypatch only one instance...
+    //
+    // It is set in only two places:
+    //
+    // Zotero.Integration.Session.prototype.setData = function(data, resetStyle)
+    // Zotero.Integration.Session.BibliographyEditInterface.prototype._update = function()
+    // 
+
+
+    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
+        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData")
+        var oldStyle = (this.data && this.data.style ? this.data.style : false);
+        var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
+        var outputFormat, new_style, original_style;
+        // Same conditions by which original() determines whether to reset the style, using same information.
+        if(data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
+            // After it's done, we re-set the style. It really is this.style, not this.data.style here.
+            // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
+            // Above the call to original(...) above, it might not have. It may have been reset, or not.
+            outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+            this.style.setOutputFormat(outputFormat);
+            // pro-actively monkeypatch it for good measure.
+            original_style = this.style;
+            if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
+                new_style = Object.create(this.style);
+                new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+                    console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData:new_style.setOutputFormat")
+                    var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                    original_style.setOutputFormat(outputFormat);
+                };
+                new_style.setOutputFormat_is_propachi_monkeypatched = true;
+                this.style = new_style;
+            }
+        }
+        return ret;
+    });
+
+
+    propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
+        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update")
+        var ret, new_style;
+        var original_style = this.session.style;
+        if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
+            new_style = Object.create(this.session.style);
+            new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+                console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update:new_style.setOutputFormat")
+                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                original_style.setOutputFormat(outputFormat);
+            };
+            new_style.setOutputFormat_is_propachi_monkeypatched = true;
+            this.session.style = new_style;
+        }
+        return original(); // calls on setOutputFormat internally.
+    });
+                             
+
+    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'formatCitation', function(original, index, citation) {
+        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation")
+        var ret, new_style;
+        var original_style = this.style;
+        if (! original_style.processCitationCluster_is_propachi_monkeypatched) {
+            new_style = Object.create(this.style);
+            new_style.processCitationCluster =
+                function(citation, citationsPre, citationsPost) {
+                    // CSL.Output.Formats[state.opt.mode] is undefined
+                    console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation:new_style.processCitationCluster")
+                    var newCitations = original_style.processCitationCluster(citation, citationsPre, citationsPost);
+                    for each(var newCitation in newCitations[1]) {
+                        var nCite = newCitation[1];
+                        newCitation[1] = nCite.replace(/X-X-X ?/g, "");
+                    }
+                    return newCitations;
+                };
+            new_style.processCitationCluster_is_propachi_monkeypatched = true;
+            this.style = new_style;
+        }
+        ret = original(index, citation); // calls style.processCitationCluster(...) internally.
+        return ret;
+    });
+
+    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'getBibliography', function(original) {
+        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
+        var bib = original();
+        if(bib) {
+	    var bibl, bibstart, outputFormat;
+            
+	    outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+            
+	    // Initially compiled from coffeescript, then extended by hand here.
+	    //
+	    bibl = (function() {
+	        var b, i, len, ref1, results1, hspace;
+	        ref1 = bib[1];
+	        results1 = [];
+	        for (i = 0, len = ref1.length; i < len; i++) {
+		    b = ref1[i];
+		    // For any outputFormat, abbreviatioon to X-X-X causes
+		    // complete deletion of a string from the output. It is not
+		    // possible to set an abbrev to the empty string.
+		    //
+		    b = b.replace(/X-X-X ?/g, "");
+		    //
+		    results1.push(b);
+	        }
+	        return results1;
+	    })();
+	    bib[1] = bibl;
+            
+	    if (outputFormat === "bbl") {
+	        //
+	        // The number inside of the \begin{thebibliography}{9999} is a width
+	        // template, where maxoffset is number of characters. This will
+	        // convert one to the other, and replace the initial 9999 with what
+	        // will hopefully be the right width. Again, this must be done as a
+	        // post-process, since it's not until the entire bibliography is
+	        // completed that we know what maxoffset's value is.
+	        //
+	        bibstart = bib[0].bibstart.replace(/9999/, ((function() {
+		    var n, i, max, maxmax, ref1, results1;
+		    results1 = [];
+		    max = bib[0].maxoffset;
+		    maxmax = Zotero.Prefs.get("integration.maxmaxOffset") || 16;
+		    if (max > maxmax) max = maxmax;
+		    for (n = i = 1, ref1 = max; 1 <= ref1 ? i <= ref1 : i >= ref1; n = 1 <= ref1 ? ++i : --i) {
+		        results1.push("9");
+		    }
+		    return results1;
+	        })()).join(""));
+	    }
+        }
+        return bib;
+    });
 }
+
+
+function monkeyUnpatchIntegration(Zotero) {
+    Zotero.Integration.Session.prototype.setData.unpatch &&
+        Zotero.Integration.Session.prototype.setData.unpatch();
+
+    Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
+        Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
+
+    Zotero.Integration.Session.prototype.formatCitation.unpatch &&
+        Zotero.Integration.Session.prototype.formatCitation.unpatch();
+
+    Zotero.Integration.Session.prototype.getBibliography.unpatch &&
+        Zotero.Integration.Session.prototype.getBibliography.unpatch();
+}
+
+
 
 function UiObserver() {
     this.register();
@@ -69,7 +298,9 @@ UiObserver.prototype = {
         ifZotero(
             function (Zotero) {
                 replaceProcessor(Zotero);
-                replaceIntegration(Zotero);
+                monkeypatchIntegration(Zotero);
+                // Zotero.BetterBibTeX.schomd.init &&
+                //     Zotero.BetterBibTeX.schomd.init();
             },
             null
         );
@@ -97,7 +328,9 @@ function startup (data, reason) {
         function (Zotero) {
             // Set immediately if we have Zotero
             replaceProcessor(Zotero);
-            replaceIntegration(Zotero);
+            monkeypatchIntegration(Zotero);
+            // Zotero.BetterBibTeX.schomd.init &&
+            //     Zotero.BetterBibTeX.schomd.init();
         },
         function () {
             // If not, assume it will arrive by the end of UI startup
@@ -111,8 +344,9 @@ function shutdown (data, reason) {
     ifZotero(
         function (Zotero) {
             Zotero.CiteProc.CSL = oldProcessor;
-            // Zotero.Prefs.clear("integration.outputFormat");
-            // Zotero.Prefs.clear("integration.maxmaxOffset");
+            monkeypatchIntegration(Zotero);
+            // Zotero.BetterBibTeX.schomd.init &&
+            //     Zotero.BetterBibTeX.schomd.init();
         },
         null
     );
