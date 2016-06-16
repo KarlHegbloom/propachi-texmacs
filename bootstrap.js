@@ -148,7 +148,7 @@ function monkeypatchIntegration (Zotero) {
 
 
     propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
-        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData")
+        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData")
         var oldStyle = (this.data && this.data.style ? this.data.style : false);
         var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
         var outputFormat, new_style, original_style;
@@ -164,7 +164,7 @@ function monkeypatchIntegration (Zotero) {
             if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
                 new_style = Object.create(this.style);
                 new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                    console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData:new_style.setOutputFormat")
+                    //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData:new_style.setOutputFormat")
                     var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
                     original_style.setOutputFormat(outputFormat);
                 };
@@ -177,13 +177,13 @@ function monkeypatchIntegration (Zotero) {
 
 
     propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
-        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update")
+        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update")
         var ret, new_style;
         var original_style = this.session.style;
         if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
             new_style = Object.create(this.session.style);
             new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update:new_style.setOutputFormat")
+                //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update:new_style.setOutputFormat")
                 var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
                 original_style.setOutputFormat(outputFormat);
             };
@@ -195,7 +195,7 @@ function monkeypatchIntegration (Zotero) {
                              
 
     propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'formatCitation', function(original, index, citation) {
-        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation")
+        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation")
         var ret, new_style;
         var original_style = this.style;
         if (! original_style.processCitationCluster_is_propachi_monkeypatched) {
@@ -203,7 +203,7 @@ function monkeypatchIntegration (Zotero) {
             new_style.processCitationCluster =
                 function(citation, citationsPre, citationsPost) {
                     // CSL.Output.Formats[state.opt.mode] is undefined
-                    console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation:new_style.processCitationCluster")
+                    //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation:new_style.processCitationCluster")
                     var newCitations = original_style.processCitationCluster(citation, citationsPre, citationsPost);
                     for each(var newCitation in newCitations[1]) {
                         var nCite = newCitation[1];
@@ -219,7 +219,7 @@ function monkeypatchIntegration (Zotero) {
     });
 
     propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'getBibliography', function(original) {
-        console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
+        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
         var bib = original();
         if(bib) {
 	    var bibl, bibstart, outputFormat;
@@ -299,8 +299,6 @@ UiObserver.prototype = {
             function (Zotero) {
                 replaceProcessor(Zotero);
                 monkeypatchIntegration(Zotero);
-                // Zotero.BetterBibTeX.schomd.init &&
-                //     Zotero.BetterBibTeX.schomd.init();
             },
             null
         );
@@ -329,8 +327,6 @@ function startup (data, reason) {
             // Set immediately if we have Zotero
             replaceProcessor(Zotero);
             monkeypatchIntegration(Zotero);
-            // Zotero.BetterBibTeX.schomd.init &&
-            //     Zotero.BetterBibTeX.schomd.init();
         },
         function () {
             // If not, assume it will arrive by the end of UI startup
@@ -344,9 +340,7 @@ function shutdown (data, reason) {
     ifZotero(
         function (Zotero) {
             Zotero.CiteProc.CSL = oldProcessor;
-            monkeypatchIntegration(Zotero);
-            // Zotero.BetterBibTeX.schomd.init &&
-            //     Zotero.BetterBibTeX.schomd.init();
+            monkeyUnpatchIntegration(Zotero);
         },
         null
     );
