@@ -192,84 +192,33 @@ function monkeypatchIntegration (Zotero) {
         }
         return original(); // calls on setOutputFormat internally.
     });
-                             
 
-    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'formatCitation', function(original, index, citation) {
-        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation")
-        var ret, new_style;
-        var original_style = this.style;
-        if (! original_style.processCitationCluster_is_propachi_monkeypatched) {
-            new_style = Object.create(this.style);
-            new_style.processCitationCluster =
-                function(citation, citationsPre, citationsPost) {
-                    // CSL.Output.Formats[state.opt.mode] is undefined
-                    //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.formatCitation:new_style.processCitationCluster")
-                    var newCitations = original_style.processCitationCluster(citation, citationsPre, citationsPost);
-                    for each(var newCitation in newCitations[1]) {
-                        var nCite = newCitation[1];
-                        newCitation[1] = nCite.replace(/X-X-X ?/g, "");
-                    }
-                    return newCitations;
-                };
-            new_style.processCitationCluster_is_propachi_monkeypatched = true;
-            this.style = new_style;
-        }
-        ret = original(index, citation); // calls style.processCitationCluster(...) internally.
-        return ret;
-    });
+    // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'getBibliography', function(original) {
+    //     //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
+    //     var bib = original();
+    //     if(bib) {
+    //         var bibl, bibstart, outputFormat;
+            
+    //         outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
 
-    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'getBibliography', function(original) {
-        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
-        var bib = original();
-        if(bib) {
-	    var bibl, bibstart, outputFormat;
-            
-	    outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
-            
-	    // Initially compiled from coffeescript, then extended by hand here.
-	    //
-	    bibl = (function() {
-	        var b, i, len, ref1, results1, hspace;
-	        ref1 = bib[1];
-	        results1 = [];
-	        for (i = 0, len = ref1.length; i < len; i++) {
-		    b = ref1[i];
-		    // For any outputFormat, abbreviatioon to X-X-X causes
-		    // complete deletion of a string from the output. It is not
-		    // possible to set an abbrev to the empty string.
-		    //
-		    b = b.replace(/X-X-X ?/g, "");
-		    //
-		    results1.push(b);
-	        }
-	        return results1;
-	    })();
-	    bib[1] = bibl;
-            
-	    if (outputFormat === "bbl") {
-	        //
-	        // The number inside of the \begin{thebibliography}{9999} is a width
-	        // template, where maxoffset is number of characters. This will
-	        // convert one to the other, and replace the initial 9999 with what
-	        // will hopefully be the right width. Again, this must be done as a
-	        // post-process, since it's not until the entire bibliography is
-	        // completed that we know what maxoffset's value is.
-	        //
-	        bibstart = bib[0].bibstart.replace(/9999/, ((function() {
-		    var n, i, max, maxmax, ref1, results1;
-		    results1 = [];
-		    max = bib[0].maxoffset;
-		    maxmax = Zotero.Prefs.get("integration.maxmaxOffset") || 16;
-		    if (max > maxmax) max = maxmax;
-		    for (n = i = 1, ref1 = max; 1 <= ref1 ? i <= ref1 : i >= ref1; n = 1 <= ref1 ? ++i : --i) {
-		        results1.push("9");
-		    }
-		    return results1;
-	        })()).join(""));
-	    }
-        }
-        return bib;
-    });
+    //         if (outputFormat === "bbl") {
+    //             //
+    //             // The number inside of the \begin{thebibliography}{9999} is a width
+    //             // template, where maxoffset is number of characters. This will
+    //             // convert one to the other, and replace the initial 9999 with what
+    //             // will hopefully be the right width. Again, this must be done as a
+    //             // post-process, since it's not until the entire bibliography is
+    //             // completed that we know what maxoffset's value is.
+    //             //
+    //             var max, maxmax;
+    //     	max = bib[0].maxoffset;
+    //     	maxmax = Zotero.Prefs.get("integration.maxmaxOffset") || 16;
+    //     	if (max > maxmax) max = maxmax;
+    //             bibstart = bib[0].bibstart.replace(/@MAXOFFSET@/, max.as_string());
+    //         }
+    //     }
+    //     return bib;
+    // });
 }
 
 
