@@ -147,78 +147,158 @@ function monkeypatchIntegration (Zotero) {
     // 
 
 
-    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
-        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData")
-        var oldStyle = (this.data && this.data.style ? this.data.style : false);
-        var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
-        var outputFormat, new_style, original_style;
-        // Same conditions by which original() determines whether to reset the style, using same information.
-        if(data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
-            // After it's done, we re-set the style. It really is this.style, not this.data.style here.
-            // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
-            // Above the call to original(...) above, it might not have. It may have been reset, or not.
-            outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
-            this.style.setOutputFormat(outputFormat);
-            // pro-actively monkeypatch it for good measure.
-            original_style = this.style;
-            if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
-                new_style = Object.create(this.style);
-                new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                    //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.setData:new_style.setOutputFormat")
-                    var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
-                    original_style.setOutputFormat(outputFormat);
-                };
-                new_style.setOutputFormat_is_propachi_monkeypatched = true;
-                this.style = new_style;
-            }
-        }
-        return ret;
-    });
+        propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
+                var oldStyle = (this.data && this.data.style ? this.data.style : false);
+                var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
+                var outputFormat, new_style, original_style;
+                // Same conditions by which original() determines whether to reset the style, using same information.
+                if(data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
+                        // After it's done, we re-set the style. It really is this.style, not this.data.style here.
+                        // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
+                        // Above the call to original(...) above, it might not have. It may have been reset, or not.
+                        outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                        this.style.setOutputFormat(outputFormat);
+                        // pro-actively monkeypatch it for good measure.
+                        original_style = this.style;
+                        if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
+                                new_style = Object.create(this.style);
+                                new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+                                        var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                                        original_style.setOutputFormat(outputFormat);
+                                };
+                                new_style.setOutputFormat_is_propachi_monkeypatched = true;
+                                this.style = new_style;
+                        }
+                }
+                return ret;
+        });
 
 
-    propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
-        //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update")
-        var ret, new_style;
-        var original_style = this.session.style;
-        if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
-            new_style = Object.create(this.session.style);
-            new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.BibliographyEditInterface.prototype._update:new_style.setOutputFormat")
-                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
-                original_style.setOutputFormat(outputFormat);
-            };
-            new_style.setOutputFormat_is_propachi_monkeypatched = true;
-            this.session.style = new_style;
-        }
-        return original(); // calls on setOutputFormat internally.
-    });
+        propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
+                var ret, new_style;
+                var original_style = this.session.style;
+                if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
+                        new_style = Object.create(this.session.style);
+                        new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+                                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                                original_style.setOutputFormat(outputFormat);
+                        };
+                        new_style.setOutputFormat_is_propachi_monkeypatched = true;
+                        this.session.style = new_style;
+                }
+                return original(); // calls on setOutputFormat internally.
+        });
+        
+        propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
+                console.log("setVariableWrapper called.\n");
+                var last_itemID = "";
+                this.variableWrapper = function(params, prePunct, str, postPunct) {
+                        // console.log("variableWrapper:variableNames[0]:" + params.variableNames[0]);
+                        // console.log("variableWrapper:context:" + params.context);
+                        // console.log("variableWrapper:str:" + str);
+                        // console.log("variableWrapper:itemData:" + JSON.stringify(params.itemData));
+                        // console.log("variableWrapper:itemData:" + JSON.stringify(params));
+                        var this_itemID = params.context + "_" + params.itemData.id.toString();
+                        // console.log("variableWrapper:this_itemID:" + this_itemID);
+                        if (this_itemID === last_itemID) {
+				return (prePunct + str + postPunct);
+                        } else {
+                                last_itemID = this_itemID;
+			        // any first field for this_itemID
+                                if (params.context === "bibliography" && (params.itemData.URL
+                                                                          || params.itemData.URL_REAL
+                                                                          || params.itemData.DOI)) {
+				        var URL = null;
+				        var DOI = params.itemData.DOI;
+				        if (DOI) {
+					        URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI)
+				        }
+				        if (!URL) {
+					        URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
+				        }
+				        if (URL) {
+                                                // console.log("variableWrapper:URL:" + URL);
+                                                if (params.mode === 'rtf') {
+						        return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
+					        } else if (params.mode === 'bbl') {
+                                                        if (str.length > 4) {
+                                                                return prePunct
+                                                                        + '\\ztHrefFromBibToURL{'
+                                                                        + URL.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + '}{'
+                                                                        + str.substring(0,4).replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + '}'
+                                                                        + str.substring(4).replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + postPunct;
+                                                        } else {
+                                                                return prePunct
+                                                                        + '\\ztHrefFromBibToURL{'
+                                                                        + URL.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + '}{'
+                                                                        + str.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + '}'
+                                                                        + postPunct;
+                                                        }
+                                                } else {
+						        return prePunct + '<a href="' + URL + '">' + str + '</a>' + postPunct;
+					        }
+				        } else {
+                                                // console.log("variableWrapper:No URL");
+					        return (prePunct + str + postPunct);
+				        }
+                                        // any first field for an id
+			        } else if (params.context === 'citation') {
+                                        if (params.mode === 'bbl') {
+                                                if (str.length > 4) {
+                                                        return prePunct
+                                                                + '\\ztHrefFromCiteToBib{#zbibSysID'
+                                                                + params.itemData.id.toString()
+                                                                + '}{'
+                                                                + str.substring(0,4)
+                                                                + '}'
+                                                                + str.substring(4)
+                                                                + postPunct;
+                                                } else {
+                                                        return prePunct
+                                                                + '\\ztHrefFromCiteToBib{#zbibSysID'
+                                                                + params.itemData.id.toString()
+                                                                + '}{'
+                                                                + str
+                                                                + '}'
+                                                                + postPunct;
+                                                }
+                                        }
+                                } else {
+				        return (prePunct + str + postPunct);
+			        }
+                        }
+                }
+        });
 
-    // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'getBibliography', function(original) {
-    //     //console.log("propachi-texmacs:propachi_npm_monkeypatch:Zotero.Integration.Session.prototype.getBibliography")
-    //     var bib = original();
-    //     if(bib) {
-    //         var bibl, bibstart, outputFormat;
-            
-    //         outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+        // Zotero.Cite.System.prototype.wrapCitationEntryBbl = function(state, str, sys_id, item_id, locator_txt, suffix_txt) {
+        //         console.log("wrapCitationEntryBbl called.\n");
+        //         // <a href="zotero://select/items/%%ITEM_ID%%">{  | %%STRING%% | %%LOCATOR%% | %%SUFFIX%% }</a>
+        //         var citationWrapperBbl = Zotero.Prefs.get("export.quickCopy.citationWrapperBbl") || "\\label{sysID%%SYS_ID%%}";
+        //
+        //         if (!locator_txt) {
+        //                 locator_txt = "";
+        //         }
+        //         if (!suffix_txt) {
+        //                 suffix_txt = "";
+        //         }
+        //         return citationWrapperBbl
+        //                 .replace("%%STRING%%", str)
+        //                 .replace("%%SYS_ID%%", sys_id)
+	// 		.replace("%%ITEM_ID%%", item_id)
+	// 		.replace("%%LOCATOR%%", locator_txt)
+	// 		.replace("%%SUFFIX%%", suffix_txt);
+        // }
+        //
+        // Zotero.Cite.System.prototype.wrapCitationEntry = Zotero.Cite.System.prototype.wrapCitationEntryBbl;
 
-    //         if (outputFormat === "bbl") {
-    //             //
-    //             // The number inside of the \begin{thebibliography}{9999} is a width
-    //             // template, where maxoffset is number of characters. This will
-    //             // convert one to the other, and replace the initial 9999 with what
-    //             // will hopefully be the right width. Again, this must be done as a
-    //             // post-process, since it's not until the entire bibliography is
-    //             // completed that we know what maxoffset's value is.
-    //             //
-    //             var max, maxmax;
-    //     	max = bib[0].maxoffset;
-    //     	maxmax = Zotero.Prefs.get("integration.maxmaxOffset") || 16;
-    //     	if (max > maxmax) max = maxmax;
-    //             bibstart = bib[0].bibstart.replace(/@MAXOFFSET@/, max.as_string());
-    //         }
-    //     }
-    //     return bib;
-    // });
+        // propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, state, sys_id, item_id) {
+        //         return "\\label{sysIDbib" + sys_id + "}";
+        // });
 }
 
 
