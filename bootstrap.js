@@ -190,7 +190,7 @@ function monkeypatchIntegration (Zotero) {
         });
         
         propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
-                console.log("setVariableWrapper called.\n");
+                // console.log("setVariableWrapper called.\n");
                 var last_itemID = "";
                 this.variableWrapper = function(params, prePunct, str, postPunct) {
 
@@ -207,7 +207,7 @@ function monkeypatchIntegration (Zotero) {
                         this_itemID = params.context + "_" + params.itemData.id.toString();
                         // console.log("variableWrapper:this_itemID:" + this_itemID);
                         
-                        console.log("\nvariableWrapper:str:" + str);
+                        // console.log("\nvariableWrapper:str:" + str);
                         //
                         // \textsc{Wikipedia}    ==> 1 = \textsc{   2 = Wikipedia  3 = }
                         // {\scshape{}Wikipedia} ==> 1 = {\scshape{}  2 = Wikipedia  3 = }
