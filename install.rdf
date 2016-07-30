@@ -8,7 +8,7 @@
     <em:creator>Karl M. Hegbloom</em:creator>
     <em:contributor>Originally propachi-upper by Frank Bennett</em:contributor>
     <em:description>Replaces Zotero CSL processor and editor integration with alternative versions, with support for the TeXmacs editor.</em:description>
-    <em:updateURL>https://github.com/KarlHegbloom/propachi-texmacs/update.rdf</em:updateURL>
+    <em:updateURL>https://juris-m.github.io/propachi-texmacs/update.rdf</em:updateURL>
     <em:unpack>true</em:unpack>
     <em:bootstrap>true</em:bootstrap>
     <em:targetApplication>
