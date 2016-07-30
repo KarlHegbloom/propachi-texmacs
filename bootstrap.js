@@ -193,13 +193,52 @@ function monkeypatchIntegration (Zotero) {
                 console.log("setVariableWrapper called.\n");
                 var last_itemID = "";
                 this.variableWrapper = function(params, prePunct, str, postPunct) {
+
+                        var fore, txt, aft;
+                        var this_itemID;
+                        var str_parse, m;
+
                         // console.log("variableWrapper:variableNames[0]:" + params.variableNames[0]);
                         // console.log("variableWrapper:context:" + params.context);
                         // console.log("variableWrapper:str:" + str);
                         // console.log("variableWrapper:itemData:" + JSON.stringify(params.itemData));
                         // console.log("variableWrapper:itemData:" + JSON.stringify(params));
-                        var this_itemID = params.context + "_" + params.itemData.id.toString();
+
+                        this_itemID = params.context + "_" + params.itemData.id.toString();
                         // console.log("variableWrapper:this_itemID:" + this_itemID);
+                        
+                        console.log("\nvariableWrapper:str:" + str);
+                        //
+                        // \textsc{Wikipedia}    ==> 1 = \textsc{   2 = Wikipedia  3 = }
+                        // {\scshape{}Wikipedia} ==> 1 = {\scshape{}  2 = Wikipedia  3 = }
+                        // Wikipedia             ==> 1 = ''  2 = Wikipedia  3 = ''
+                        // {\itshape{}Reliability matters: reassociating Bagley materiality, Strickland prejudice, and cumulative harmless error}
+                        // {\scshape{}The Journal of Criminal Law and Criminology}
+                        // 01#@Sup. Ct.Sup. Ct.X-X-X
+                        // \abbr{Mass.} \abbr{App.} \abbr{Ct.}
+                        // 08#@005#@Discretionary appeals of interlocutory orders
+                        //
+                        str_parse = new Zotero.Utilities.XRegExp(/^((?:[a-zA-Z0-9\\{}]+?[{}]{1,2}|(?:[0-9][a-zA-Z0-9#@]+#@)*))([^{}]*)(}*.*)/);
+                        // str_parse.compile();
+                        m = str_parse.exec(str);
+                        if (m != null) {
+                                console.log("variableWrapper:m != null");
+                                console.log("variableWrapper:m[0]:" + m[0]);
+                                console.log("variableWrapper:m:" + JSON.stringify(m));
+                                fore = m[1]; 
+                                txt  = m[2]; 
+                                aft  = m[3];
+                        } else {
+                                console.log("variableWrapper:m === null");
+                                fore = '';
+                                txt  = str;
+                                aft  = '';
+                        }
+
+                        console.log("variableWrapper:fore:" + fore + "\n"
+                                    + "variableWrapper:txt:" + txt + "\n"
+                                    + "variableWrapper:aft:" + aft + "\n");
+                        
                         if (this_itemID === last_itemID) {
 				return (prePunct + str + postPunct);
                         } else {
@@ -220,23 +259,29 @@ function monkeypatchIntegration (Zotero) {
                                                 // console.log("variableWrapper:URL:" + URL);
                                                 if (params.mode === 'rtf') {
 						        return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
-					        } else if (params.mode === 'bbl') {
-                                                        if (str.length > 4) {
+					        }
+                                                else if (params.mode === 'bbl') {
+                                                        if (txt.length > 4) {
+                                                                // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                                                 return prePunct
+                                                                        + fore
                                                                         + '\\ztHrefFromBibToURL{'
-                                                                        + URL.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + encodeURI(URL)
                                                                         + '}{'
-                                                                        + str.substring(0,4).replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + txt.substring(0,4)
                                                                         + '}'
-                                                                        + str.substring(4).replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + txt.substring(4)
+                                                                        + aft
                                                                         + postPunct;
                                                         } else {
                                                                 return prePunct
+                                                                        + fore
                                                                         + '\\ztHrefFromBibToURL{'
-                                                                        + URL.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + encodeURI(URL)
                                                                         + '}{'
-                                                                        + str.replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
+                                                                        + txt
                                                                         + '}'
+                                                                        + aft
                                                                         + postPunct;
                                                         }
                                                 } else {
@@ -249,22 +294,26 @@ function monkeypatchIntegration (Zotero) {
                                         // any first field for an id
 			        } else if (params.context === 'citation') {
                                         if (params.mode === 'bbl') {
-                                                if (str.length > 4) {
+                                                if (txt.length > 4) {
                                                         return prePunct
+                                                                + fore
                                                                 + '\\ztHrefFromCiteToBib{#zbibSysID'
                                                                 + params.itemData.id.toString()
                                                                 + '}{'
-                                                                + str.substring(0,4)
+                                                                + txt.substring(0,4)
                                                                 + '}'
-                                                                + str.substring(4)
+                                                                + txt.substring(4)
+                                                                + aft
                                                                 + postPunct;
                                                 } else {
                                                         return prePunct
+                                                                + fore
                                                                 + '\\ztHrefFromCiteToBib{#zbibSysID'
                                                                 + params.itemData.id.toString()
                                                                 + '}{'
                                                                 + str
                                                                 + '}'
+                                                                + aft
                                                                 + postPunct;
                                                 }
                                         }
