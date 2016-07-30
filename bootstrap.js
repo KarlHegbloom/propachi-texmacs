@@ -222,22 +222,22 @@ function monkeypatchIntegration (Zotero) {
                         // str_parse.compile();
                         m = str_parse.exec(str);
                         if (m != null) {
-                                console.log("variableWrapper:m != null");
-                                console.log("variableWrapper:m[0]:" + m[0]);
-                                console.log("variableWrapper:m:" + JSON.stringify(m));
+                                // console.log("variableWrapper:m != null");
+                                // console.log("variableWrapper:m[0]:" + m[0]);
+                                // console.log("variableWrapper:m:" + JSON.stringify(m));
                                 fore = m[1]; 
                                 txt  = m[2]; 
                                 aft  = m[3];
                         } else {
-                                console.log("variableWrapper:m === null");
+                                // console.log("variableWrapper:m === null");
                                 fore = '';
                                 txt  = str;
                                 aft  = '';
                         }
 
-                        console.log("variableWrapper:fore:" + fore + "\n"
-                                    + "variableWrapper:txt:" + txt + "\n"
-                                    + "variableWrapper:aft:" + aft + "\n");
+                        // console.log("variableWrapper:fore:" + fore + "\n"
+                        //             + "variableWrapper:txt:" + txt + "\n"
+                        //             + "variableWrapper:aft:" + aft + "\n");
                         
                         if (this_itemID === last_itemID) {
 				return (prePunct + str + postPunct);
