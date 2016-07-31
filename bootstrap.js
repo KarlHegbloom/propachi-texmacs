@@ -266,7 +266,7 @@ function monkeypatchIntegration (Zotero) {
                                                                 return prePunct
                                                                         + fore
                                                                         + '\\ztHrefFromBibToURL{'
-                                                                        + encodeURI(URL)
+                                                                        + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
                                                                         + '}{'
                                                                         + txt.substring(0,4)
                                                                         + '}'
@@ -277,7 +277,7 @@ function monkeypatchIntegration (Zotero) {
                                                                 return prePunct
                                                                         + fore
                                                                         + '\\ztHrefFromBibToURL{'
-                                                                        + encodeURI(URL)
+                                                                        + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
                                                                         + '}{'
                                                                         + txt
                                                                         + '}'
