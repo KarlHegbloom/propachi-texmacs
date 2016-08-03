@@ -242,19 +242,17 @@ function monkeypatchIntegration (Zotero) {
                         if (this_itemID === last_itemID) {
 				return (prePunct + str + postPunct);
                         } else {
+                                var URL = null;
+				var DOI = params.itemData.DOI;
+				if (DOI) {
+					URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI);
+				}
+				if (!URL) {
+					URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
+				}
                                 last_itemID = this_itemID;
 			        // any first field for this_itemID
-                                if (params.context === "bibliography" && (params.itemData.URL
-                                                                          || params.itemData.URL_REAL
-                                                                          || params.itemData.DOI)) {
-				        var URL = null;
-				        var DOI = params.itemData.DOI;
-				        if (DOI) {
-					        URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI)
-				        }
-				        if (!URL) {
-					        URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
-				        }
+                                if (params.context === "bibliography") {
 				        if (URL) {
                                                 // console.log("variableWrapper:URL:" + URL);
                                                 if (params.mode === 'rtf') {
@@ -265,7 +263,9 @@ function monkeypatchIntegration (Zotero) {
                                                                 // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                                                 return prePunct
                                                                         + fore
-                                                                        + '\\ztHrefFromBibToURL{'
+                                                                        + '\\ztHrefFromBibToURL{#zbibSysID'
+                                                                        + params.itemData.id.toString()
+                                                                        +  '}{'
                                                                         + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
                                                                         + '}{'
                                                                         + txt.substring(0,4)
@@ -276,7 +276,9 @@ function monkeypatchIntegration (Zotero) {
                                                         } else {
                                                                 return prePunct
                                                                         + fore
-                                                                        + '\\ztHrefFromBibToURL{'
+                                                                        + '\\ztHrefFromBibToURL{#zbibSysID'
+                                                                        + params.itemData.id.toString()
+                                                                        + '}{'
                                                                         + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
                                                                         + '}{'
                                                                         + txt
@@ -285,7 +287,8 @@ function monkeypatchIntegration (Zotero) {
                                                                         + postPunct;
                                                         }
                                                 } else {
-						        return prePunct + '<a href="' + URL + '">' + str + '</a>' + postPunct;
+						        return prePunct + '<a id="zbibSysID' + params.itemData.id.toString() + '" '
+                                                                + 'href="' + URL + '">' + str + '</a>' + postPunct;
 					        }
 				        } else {
                                                 // console.log("variableWrapper:No URL");
@@ -294,11 +297,37 @@ function monkeypatchIntegration (Zotero) {
                                         // any first field for an id
 			        } else if (params.context === 'citation') {
                                         if (params.mode === 'bbl') {
+                                                var theURL;
+                                                if (URL) {
+                                                        // client Guile code and style package macros can use this to create a
+                                                        // hyperlink to the on-line URL when there's no bibliography in the
+                                                        // document. When there is one, then the ztHrefFromCiteToBib macro's
+                                                        // first argument will link to a label loci inside the bibliography.
+                                                        //
+                                                        // There, in the bibliography, each item can have a link to this same
+                                                        // URL; using the first four characters of the item's text as the
+                                                        // display text.
+                                                        //
+                                                        theURL = '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}';
+                                                } else {
+                                                        // can be replaced by client code with globally set, document set, or
+                                                        // with-wrapped setting variable containing a URL or just "".
+                                                        //
+                                                        theURL = '\\path{#=T=T=T=}'; // trellis t-total talkoot. V flag
+                                                }
                                                 if (txt.length > 4) {
+                                                        // notice that the zbibSysID contains the item system id as assigned
+                                                        // by Juris-M / Zotero. So these have enough information to
+                                                        // programatically form the zotero: URL that finds the citation.  This
+                                                        // tag can look up the tree to find the citation cluster that it's in,
+                                                        // and thus the zotero: URL's; perhaps in that cluster's field code
+                                                        // data.
                                                         return prePunct
                                                                 + fore
                                                                 + '\\ztHrefFromCiteToBib{#zbibSysID'
                                                                 + params.itemData.id.toString()
+                                                                + '}{'
+                                                                + theURL
                                                                 + '}{'
                                                                 + txt.substring(0,4)
                                                                 + '}'
@@ -310,6 +339,8 @@ function monkeypatchIntegration (Zotero) {
                                                                 + fore
                                                                 + '\\ztHrefFromCiteToBib{#zbibSysID'
                                                                 + params.itemData.id.toString()
+                                                                + '}{'
+                                                                + theURL
                                                                 + '}{'
                                                                 + str
                                                                 + '}'
