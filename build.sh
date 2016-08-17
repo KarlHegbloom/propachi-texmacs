@@ -5,10 +5,10 @@ set -e
 # Release-dance code goes here.
 
 # Constants
-PRODUCT="Propachi: CSL processor monkey-patch for Zotero (texmacs support)"
-IS_BETA="false"
+PRODUCT="Propachi: CSL processor monkey-patch for Zotero (TeXmacs Support)"
+IS_BETA="true"
 FORK="propachi-texmacs"
-BRANCH="master"
+BRANCH="propachi-texmacs-master"
 CLIENT="propachi-texmacs"
 VERSION_ROOT="1.1."
 SIGNED_STUB="propachi_patch_zotero_csl_processor_texmacs_ver-"
