@@ -11,7 +11,9 @@ FORK="propachi-texmacs"
 BRANCH="propachi-texmacs-master"
 CLIENT="propachi-texmacs"
 VERSION_ROOT="1.1."
-SIGNED_STUB="propachi_patch_zotero_csl_processor_texmacs_ver-"
+
+# propachi_monkey_patch_for_zotero_csl_processor_and_editor_integration_with_texmacs_support-1.1.113beta8-fx.xpi
+SIGNED_STUB="propachi_monkey_patch_for_zotero_csl_processor_and_editor_integration_with_texmacs_support-"
 
 # citeproc-js is a symlink to a git checkout containing my
 # fork of the citeproc-js with appropriate patches applied.
