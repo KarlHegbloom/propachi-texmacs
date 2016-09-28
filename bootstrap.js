@@ -205,39 +205,27 @@ function monkeypatchIntegration (Zotero) {
                         // console.log("variableWrapper:itemData:" + JSON.stringify(params));
 
                         this_itemID = params.context + "_" + params.itemData.id.toString();
-                        // console.log("variableWrapper:this_itemID:" + this_itemID);
                         
-                        // console.log("\nvariableWrapper:str:" + str);
-                        //
-                        // \textsc{Wikipedia}    ==> 1 = \textsc{   2 = Wikipedia  3 = }
-                        // {\scshape{}Wikipedia} ==> 1 = {\scshape{}  2 = Wikipedia  3 = }
-                        // Wikipedia             ==> 1 = ''  2 = Wikipedia  3 = ''
-                        // {\itshape{}Reliability matters: reassociating Bagley materiality, Strickland prejudice, and cumulative harmless error}
-                        // {\scshape{}The Journal of Criminal Law and Criminology}
-                        // 01#@Sup. Ct.Sup. Ct.X-X-X
-                        // \abbr{Mass.} \abbr{App.} \abbr{Ct.}
-                        // 08#@005#@Discretionary appeals of interlocutory orders
-                        //
-                        str_parse = new Zotero.Utilities.XRegExp(/^((?:[a-zA-Z0-9\\{}]+?[{}]{1,2}|(?:[0-9][a-zA-Z0-9#@]+#@)*))([^{}]*)(}*.*)/);
-                        // str_parse.compile();
+                        str_parse = new Zotero.Utilities.XRegExp(/^((?:(?:[0-9][a-zA-Z0-9.#@]+(?:#@|@#))|(?:\\[a-zA-Z][a-zA-Z0-9{]+{))*)([^}]*)(}?.*)$/);
                         m = str_parse.exec(str);
+                        // console.log("variableWrapper:str:" + str);
                         if (m != null) {
                                 // console.log("variableWrapper:m != null");
-                                // console.log("variableWrapper:m[0]:" + m[0]);
                                 // console.log("variableWrapper:m:" + JSON.stringify(m));
-                                fore = m[1]; 
-                                txt  = m[2]; 
+                                // console.log("variableWrapper:m[0]:" + m[0]);
+                                fore = m[1];
+                                txt  = m[2];
                                 aft  = m[3];
                         } else {
-                                // console.log("variableWrapper:m === null");
+                                //console.log("variableWrapper:m === null");
                                 fore = '';
                                 txt  = str;
                                 aft  = '';
                         }
 
-                        // console.log("variableWrapper:fore:" + fore + "\n"
-                        //             + "variableWrapper:txt:" + txt + "\n"
-                        //             + "variableWrapper:aft:" + aft + "\n");
+                        // console.log("variableWrapper:fore:" + fore);
+                        // console.log("variableWrapper:txt:"  + txt);
+                        // console.log("variableWrapper:aft:"  + aft + "\n");
                         
                         if (this_itemID === last_itemID) {
 				return (prePunct + str + postPunct);
@@ -259,6 +247,9 @@ function monkeypatchIntegration (Zotero) {
 						        return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
 					        }
                                                 else if (params.mode === 'bbl') {
+                                                        if (txt.search(/^[0-9#@]+/) != -1) {
+                                                                
+                                                        }
                                                         if (txt.length > 4) {
                                                                 // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                                                 return prePunct
