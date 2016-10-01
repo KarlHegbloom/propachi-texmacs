@@ -194,30 +194,47 @@ function monkeypatchIntegration (Zotero) {
                 var last_itemID = "";
                 this.variableWrapper = function(params, prePunct, str, postPunct) {
 
-                        var fore, txt, aft;
-                        var this_itemID;
-                        var str_parse, m;
+                        var this_itemID = params.context + "_" + params.itemData.id.toString();
 
                         // console.log("variableWrapper:variableNames[0]:" + params.variableNames[0]);
                         // console.log("variableWrapper:context:" + params.context);
-                        // console.log("variableWrapper:str:" + str);
                         // console.log("variableWrapper:itemData:" + JSON.stringify(params.itemData));
                         // console.log("variableWrapper:itemData:" + JSON.stringify(params));
 
-                        this_itemID = params.context + "_" + params.itemData.id.toString();
-                        
-                        str_parse = new Zotero.Utilities.XRegExp(/^((?:(?:[0-9][a-zA-Z0-9.#@]+(?:#@|@#))|(?:\\[a-zA-Z][a-zA-Z0-9{]+{))*)([^}]*)(}?.*)$/);
-                        m = str_parse.exec(str);
+                        // The parsing below is necessary so that the right part gets wrapped with the
+                        // URL. It has to find the text-only part, and wrap the first 4 characters of
+                        // that. I don't want it to wrap LaTeX macros, for example. For some reason,
+                        // some of them come through, as when a font shape or styling has been applied
+                        // to it. The other strings we need to skip are the 00#@ and 000000000@# hacks.
+                        //
+
                         // console.log("variableWrapper:str:" + str);
+                        //
+                        // Sample str values from real documents:
+                        //
+                        // W.W. Thornton
+                        // V
+                        // {\itshape{}Coram Nobis Et Coram Vobis}
+                        // {\scshape{}Wikipedia}
+                        // {\scshape{}Ind. L.J.}
+                        // 02#@UtahUtahX-X-X
+                        //
+                        // \ztHref{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}
+                        //
+                        var fore, txt, aft;
+                        // I created this regexp by using the Firefox addon called "Regular Expression
+                        // Tester", by Sebo. I could not have done this without it.
+                        var str_parse = new Zotero.Utilities.XRegExp(/^((?:[0-9][0-9a-zA-Z.@#]+(?:#@|@#)|\{?\\[a-z][a-zA-Z0-9}{]+(?:\{}?))+)*([^\}]+)(\}?.*)$/);
+                        var m = Zotero.Utilities.XRegExp.exec(str, str_parse);
                         if (m != null) {
                                 // console.log("variableWrapper:m != null");
                                 // console.log("variableWrapper:m:" + JSON.stringify(m));
                                 // console.log("variableWrapper:m[0]:" + m[0]);
-                                fore = m[1];
-                                txt  = m[2];
-                                aft  = m[3];
+                                fore = (m[1] ? m[1] : '');
+                                txt  = (m[2] ? m[2] : '');
+                                aft  = (m[3] ? m[3] : '');
                         } else {
-                                //console.log("variableWrapper:m === null");
+                                // console.log("variableWrapper:m === null");
                                 fore = '';
                                 txt  = str;
                                 aft  = '';
@@ -226,7 +243,12 @@ function monkeypatchIntegration (Zotero) {
                         // console.log("variableWrapper:fore:" + fore);
                         // console.log("variableWrapper:txt:"  + txt);
                         // console.log("variableWrapper:aft:"  + aft + "\n");
-                        
+
+                        // This will only run most of this function's code for the first variable in a citation or
+                        // bibliography entry (e.g., the title or the author) so that the first 4 characters of the first
+                        // word, no matter what CSL format was chosen by the user, will become a hyperlink. Obviously we don't
+                        // want every variable field in a citation or bibliography entry to have a hyperlink; only the first.
+                        //
                         if (this_itemID === last_itemID) {
 				return (prePunct + str + postPunct);
                         } else {
@@ -247,9 +269,6 @@ function monkeypatchIntegration (Zotero) {
 						        return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
 					        }
                                                 else if (params.mode === 'bbl') {
-                                                        if (txt.search(/^[0-9#@]+/) != -1) {
-                                                                
-                                                        }
                                                         if (txt.length > 4) {
                                                                 // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                                                 return prePunct
@@ -301,18 +320,14 @@ function monkeypatchIntegration (Zotero) {
                                                         //
                                                         theURL = '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}';
                                                 } else {
-                                                        // can be replaced by client code with globally set, document set, or
-                                                        // with-wrapped setting variable containing a URL or just "".
-                                                        //
-                                                        theURL = '\\path{#=T=T=T=}'; // trellis t-total talkoot. V flag
+                                                        theURL = '\\path{\\ztDefaultCiteURL}';
                                                 }
                                                 if (txt.length > 4) {
-                                                        // notice that the zbibSysID contains the item system id as assigned
-                                                        // by Juris-M / Zotero. So these have enough information to
-                                                        // programatically form the zotero: URL that finds the citation.  This
-                                                        // tag can look up the tree to find the citation cluster that it's in,
-                                                        // and thus the zotero: URL's; perhaps in that cluster's field code
-                                                        // data.
+                                                        // Notice that the zbibSysID contains the item system id as assigned
+                                                        // by Juris-M / Zotero. So these have enough information to program-
+                                                        // atically form the zotero: URL that finds the citation.  This tag
+                                                        // can look up the tree to find the citation cluster that it's in, and
+                                                        // thus the zotero: URL's; perhaps in that cluster's field code data.
                                                         return prePunct
                                                                 + fore
                                                                 + '\\ztHrefFromCiteToBib{#zbibSysID'
