@@ -224,7 +224,7 @@ function monkeypatchIntegration (Zotero) {
                         var fore, txt, aft;
                         // I created this regexp by using the Firefox addon called "Regular Expression
                         // Tester", by Sebo. I could not have done this without it.
-                        var str_parse = new Zotero.Utilities.XRegExp(/^((?:[0-9][0-9a-zA-Z.@#]+(?:#@|@#)|\{?\\[a-z][a-zA-Z0-9}{]+(?:\{}?))+)*([^\}]+)(\}?.*)$/);
+                        var str_parse = new Zotero.Utilities.XRegExp(/^((?:[0-9][-0-9a-zA-Z.@#]+(?:#@|@#)|\{?\\[a-z][a-zA-Z0-9}{]+(?:\{}?))+)*([^\}]+)(\}?.*)$/);
                         var m = Zotero.Utilities.XRegExp.exec(str, str_parse);
                         if (m != null) {
                                 // console.log("variableWrapper:m != null");
