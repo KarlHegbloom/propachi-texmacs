@@ -37,7 +37,7 @@ function monkeypatchIntegration (Zotero) {
     // npm install monkeypatch
     //
     //module.exports = function(obj, method, handler, context) {
-    
+
     var propachi_npm_monkeypatch = function(obj, method, handler, context) {
         var original = obj[method];
 
@@ -68,9 +68,9 @@ function monkeypatchIntegration (Zotero) {
     //
     // Patching a function
     //
-    // Monkeypatch Date.now() 
+    // Monkeypatch Date.now()
     // propachi_npm_monkeypatch(Date, 'now', function(original) {
-    //   // Round to 15-minute interval. 
+    //   // Round to 15-minute interval.
     //   var ts = original();
     //   return ts - (ts % 900000);
     // });
@@ -80,9 +80,9 @@ function monkeypatchIntegration (Zotero) {
     //
     // Patching an instance method
     //
-    // Monkeypatch Date#getTime() 
+    // Monkeypatch Date#getTime()
     // monkeypatch(Date.prototype, 'getTime', function(original) {
-    //   // Round to 15-minute interval. 
+    //   // Round to 15-minute interval.
     //   var ts = original();
     //   return ts - (ts % 900000);
     // });
@@ -93,26 +93,26 @@ function monkeypatchIntegration (Zotero) {
     //
     // Argument handling
     //
-    // Monkeypatch Date#setTime() 
+    // Monkeypatch Date#setTime()
     // monkeypatch(Date.prototype, 'setTime', function(original, ts) {
-    //   // Round to 15-minute interval. 
+    //   // Round to 15-minute interval.
     //   ts = ts - (ts % 900000);
-    //   // Call the original. 
+    //   // Call the original.
     //   return original(ts);
     // });
-    // 
+    //
     // var date = new Date();
     // date.setTime(date.getTime()); // set to a rounded timestamp
     //
     //
     // Unpatching
-    // Monkeypatch Date.now() 
+    // Monkeypatch Date.now()
     // monkeypatch(Date, 'now', function() { return 143942400000; });
     //
-    // console.log(Date.now()); // logs 143942400000 
+    // console.log(Date.now()); // logs 143942400000
     //
     // Date.now.unpatch();
-    // 
+    //
     // console.log(Date.now()); // logs current time
 
 
@@ -144,7 +144,7 @@ function monkeypatchIntegration (Zotero) {
     //
     // Zotero.Integration.Session.prototype.setData = function(data, resetStyle)
     // Zotero.Integration.Session.BibliographyEditInterface.prototype._update = function()
-    // 
+    //
 
 
         propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
@@ -188,7 +188,7 @@ function monkeypatchIntegration (Zotero) {
                 }
                 return original(); // calls on setOutputFormat internally.
         });
-        
+
         propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
                 // console.log("setVariableWrapper called.\n");
                 var last_itemID = "";
