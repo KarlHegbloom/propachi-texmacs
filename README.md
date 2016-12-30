@@ -1,5 +1,7 @@
 # `propachi-texmacs` #
 
+**NOTE: I don't have much time to fix this the right way... I'll do that ASAP, but for now, I must meet court deadlines! For Juris-M standalone 4.0.29.12m98, you must use propachi-texmacs v1.1.139beta1 or you'll see an error about itemID not existing.**
+
 This is a necessary component of the [`zotero-texmacs-integration`](https://github.com/KarlHegbloom/zotero-texmacs-integration) plugin for [TeXmacs](http://www.texmacs.org).
 
 It is an add-on for Firefox that modifies the Juris-M or Zotero plugin's LibreOffice integration to make it compatible with TeXmacs. Once it's installed, it will *monkey patch* the LibreOffice / Zotero `integration.js` and the `citeproc.js` each time that Firefox is started. In order to use the LibreOffice plugin with LibreOffice or MS Word again, rather than with TeXmacs, simply *disable* this plugin via the Firefox add-on configuration interface, and restart Firefox. To go back to using it with TeXmacs, enable this plugin and restart Firefox.
