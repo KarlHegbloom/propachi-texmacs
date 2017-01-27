@@ -1,6 +1,7 @@
 # `propachi-texmacs` #
 
-**NOTE: I don't have much time to fix this the right way... I'll do that ASAP, but for now, I must meet court deadlines! For Juris-M standalone 4.0.29.12m98, you must use propachi-texmacs v1.1.139beta1 or you'll see an error about itemID not existing.**
+__NOTE: For Juris-M standalone 4.0.29.12m98, please use [propachi-texmacs v1.1.139beta3](https://github.com/KarlHegbloom/propachi-texmacs/releases/tag/v1.1.139beta3).__
+
 
 This is a necessary component of the [`zotero-texmacs-integration`](https://github.com/KarlHegbloom/zotero-texmacs-integration) plugin for [TeXmacs](http://www.texmacs.org).
 
