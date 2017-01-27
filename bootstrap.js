@@ -16,7 +16,7 @@ function ifZotero(succeed, fail) {
     if (ZoteroClass) {
         Zotero = ZoteroClass
                 .getService(Ci.nsISupports)
-	        .wrappedJSObject;
+                .wrappedJSObject;
         succeed ? succeed(Zotero) : null;
     } else {
         fail ? fail() : null;
@@ -256,9 +256,9 @@ function monkeypatchIntegration (Zotero) {
                 var DOI = params.itemData.DOI;
                 if (DOI) {
                     URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI);
-		}
-		if (!URL) {
-		    URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
+                }
+                if (!URL) {
+                    URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
                 }
                 last_itemID = this_itemID;
                 // any first field for this_itemID When
@@ -270,17 +270,17 @@ function monkeypatchIntegration (Zotero) {
                 // text. e.g., "Griffin"
                 // ff fi fl ffi ffl
                 if (params.context === "bibliography") {
-		    if (URL) {
+                    if (URL) {
                         // console.log("variableWrapper:URL:" + URL);
                         if (params.mode === 'rtf') {
-			    return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
-			}
+                            return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
+                        }
                         else if (params.mode === 'bbl') {
                             if (txt.length > 4) {
                                 var txtend = 4;
                                 m = Zotero.Utilities.XRegExp.exec(txt, ligrx);
                                 if (m != null) {
-                                    txtend = m[0].length - 1;
+                                    txtend = m[0].length;
                                 }
                                 // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                 return prePunct
@@ -309,15 +309,15 @@ function monkeypatchIntegration (Zotero) {
                                     + postPunct;
                             }
                         } else {
-			    return prePunct + '<a id="zbibSysID' + params.itemData.id.toString() + '" '
+                            return prePunct + '<a id="zbibSysID' + params.itemData.id.toString() + '" '
                                 + 'href="' + URL + '">' + str + '</a>' + postPunct;
-			}
-		    } else {
+                        }
+                    } else {
                         // console.log("variableWrapper:No URL");
-			return (prePunct + str + postPunct);
-		    }
+                        return (prePunct + str + postPunct);
+                    }
                     // any first field for an id
-		} else if (params.context === 'citation') {
+                } else if (params.context === 'citation') {
                     if (params.mode === 'bbl') {
                         var theURL;
                         if (URL) {
@@ -343,7 +343,7 @@ function monkeypatchIntegration (Zotero) {
                             var txtend = 4;
                             m = Zotero.Utilities.XRegExp.exec(txt, ligrx);
                             if (m != null) {
-                                txtend = m[0].length - 1;
+                                txtend = m[0].length;
                             }
                             return prePunct
                                 + fore
@@ -372,8 +372,8 @@ function monkeypatchIntegration (Zotero) {
                         }
                     }
                 } else {
-		    return (prePunct + str + postPunct);
-		}
+                    return (prePunct + str + postPunct);
+                }
             }
         }
     });
@@ -408,9 +408,9 @@ function monkeypatchIntegration (Zotero) {
     //         return citationWrapperBbl
     //                 .replace("%%STRING%%", str)
     //                 .replace("%%SYS_ID%%", sys_id)
-    // 		.replace("%%ITEM_ID%%", item_id)
-    // 		.replace("%%LOCATOR%%", locator_txt)
-    // 		.replace("%%SUFFIX%%", suffix_txt);
+    //                 .replace("%%ITEM_ID%%", item_id)
+    //                 .replace("%%LOCATOR%%", locator_txt)
+    //                 .replace("%%SUFFIX%%", suffix_txt);
     // }
     //
     // Zotero.Cite.System.prototype.wrapCitationEntry = Zotero.Cite.System.prototype.wrapCitationEntryBbl;
