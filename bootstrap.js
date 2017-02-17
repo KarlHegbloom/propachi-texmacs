@@ -45,6 +45,34 @@ function replaceProcessor (Zotero) {
     Zotero.CiteProc.CSL = CSL;
 }
 
+
+
+function safe_stringify(obj, replacer, spaces, cycleReplacer) {
+    return JSON.stringify(obj, safe_serializer(replacer, cycleReplacer), spaces)
+}
+
+function safe_serializer(replacer, cycleReplacer) {
+  var stack = [], keys = []
+
+  if (cycleReplacer == null) cycleReplacer = function(key, value) {
+    if (stack[0] === value) return "[Circular ~]"
+    return "[Circular ~." + keys.slice(0, stack.indexOf(value)).join(".") + "]"
+  }
+
+  return function(key, value) {
+    if (stack.length > 0) {
+      var thisPos = stack.indexOf(this)
+      ~thisPos ? stack.splice(thisPos + 1) : stack.push(this)
+      ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key)
+      if (~stack.indexOf(value)) value = cycleReplacer.call(this, key, value)
+    }
+    else stack.push(value)
+
+    return replacer == null ? value : replacer.call(this, key, value)
+  }
+}
+
+
 function monkeypatchIntegration (Zotero) {
     ////////////////////////////////////////////////////////////////////////////
     // From: https://www.npmjs.com/package/monkeypatch
@@ -177,6 +205,50 @@ function monkeypatchIntegration (Zotero) {
     });
 
 
+    // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, '_updateCitations', function(original) {
+    //     var XRegExp = Zotero.Utilities.XRegExp;
+    //     for each(var indexList in [this.newIndices, this.updateIndices]) {
+    //     	for(var index in indexList) {
+    //                     var indexstr = index;
+    //     		index = parseInt(index);
+    //     		var citation = this.citationsByIndex[index];
+    //                     console.log("_updateCitations:index:" + indexstr + ":citation before:" + safe_stringify(citation, null, 2));
+    //                     var field, formattedCitation;
+    //                     if (citation.properties && citation.properties.field) {
+    //                         field = JSON.parse(citation.properties.field);
+    //                         console.log("_updateCitations:got field:" + safe_stringify(field, null, 2) + "\n");
+    //                     }
+    //                     if (citation.properties && citation.properties.formattedCitation) {
+    //                         formattedCitation = citation.properties.formattedCitation;
+    //                     }
+    //                     else if (field && field.properties && field.properties.formattedCitation) {
+    //                         formattedCitation = field.properties.formattedCitation;
+    //                     }
+    //                     if (formattedCitation) {
+    //                         console.log("_updateCitations:formattedCitation before XRegExp.replaceEach:\n" + formattedCitation + "\n");
+    //                         formattedCitation = XRegExp.replaceEach(formattedCitation, [
+    //                             [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)', 'g'), ''],
+    //                             [XRegExp('((.*?)\\2X-X-X)', 'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
+    //                             [XRegExp('(X-X-X[  ]?)', 'g'), ''],
+    //                             [XRegExp('([  ]?\\([  ]*\\))', 'g'), ''], // empty paren and space before ==> ''
+    //                             [XRegExp('(.*000000000@#(.ztbib[A-Za-z]+.*})}.*\\.?}%?)', 'gm'), "$2"]
+    //                         ]);
+    //                         console.log("_updateCitations:formattedCitation after XRegExp.replaceEach:\n" + formattedCitation + "\n");
+    //                         if (field && field.properties) {
+    //                             field.properties.formattedCitation = formattedCitation;
+    //                             citation.properties.field = JSON.stringify(field, null, 0);
+    //                         }
+    //                         if (citation.properties && citation.properties.formattedCitation) {
+    //                             citation.properties.formattedCitation = formattedCitation;
+    //                         }
+    //                     }
+    //                     console.log("_updateCitations:index:" + indexstr + ":citation after:" + safe_stringify(citation, null, 2));
+    //     	}
+    //     }
+    //     return original();
+    // });
+
+
     propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
         var ret, new_style;
         var original_style = this.session.style;
@@ -215,9 +287,53 @@ function monkeypatchIntegration (Zotero) {
         var first_variableName = "";
         var do_not_run_wrapper = false;
 
+        Zotero.Cite.System.prototype._variableWrapperCleanString = function(str, mode) {
+            //
+            // Experimentally strip out the sorting prefix here to see if the
+            // same reference entries can then be used for export to HTML also.
+            //
+            // It did not do what I was expecting. Abandoned for now.
+            //
+            var XRegExp = Zotero.Utilities.XRegExp;
+            // console.log("_variableWrapperCleanString:str before:\n'" + str + "'\n");
+            str = XRegExp.replaceEach(str, [
+                    [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)', 'g'), ''], // Sort categorizer prefixes
+                    [XRegExp('((.*?)\\2X-X-X)', 'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
+                    [XRegExp('(X-X-X[  ]?)', 'g'), ''], // X-X-X and maybe a space after ==> ''
+                    [XRegExp('([  ]?\\([  ]*\\))', 'g'), ''], // empty paren and space before ==> ''
+                    [XRegExp('(.*000000000@#)', 'g'), ''],
+                    [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<$2>$3</$2>"]
+                  ]);
+
+            // console.log("_variableWrapperCleanString:str after first replaceEach:\n'" + str + "'\n");
+
+            if (mode && mode === 'bbl') {
+                // console.log("_variableWrapperCleanString:mode: bbl");
+                str = XRegExp.replaceEach(str, [
+                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
+                      ]);
+            }
+            else if (mode && mode === 'html') {
+                // console.log("_variableWrapperCleanString:mode: html");
+                str = XRegExp.replaceEach(str, [
+                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "<div class=\"$2\">$3</div>"]
+                      ]);
+            }
+            else {
+                // console.log("_variableWrapperCleanString:mode: UNKNOWN");
+                str = XRegExp.replaceEach(str, [
+                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "$3"]
+                      ]);
+            }
+
+            // console.log("_variableWrapperCleanString:str after:\n'" + str + "'\n");
+
+            return str;
+        };
+
+
         this.variableWrapper = function(params, prePunct, str, postPunct) {
 
-            var linkTitles = Zotero.Prefs.get('linkTitles');
 
             if (params.mode === "bbl") {
 
@@ -279,6 +395,8 @@ function monkeypatchIntegration (Zotero) {
                 if (do_not_run_wrapper) {
                     return (prePunct + str + postPunct);
                 } else {
+                    // Experimentally clean strings:
+                    str = this._variableWrapperCleanString(str, params.mode);
                     //
                     // The parsing below is necessary so that the right part gets wrapped with the URL. It has to find the
                     // text-only part, and wrap the first 4 characters of that. I don't want it to wrap LaTeX macros, for
@@ -313,7 +431,7 @@ function monkeypatchIntegration (Zotero) {
                     var m = Zotero.Utilities.XRegExp.exec(str, str_parse);
                     if (m != null) {
                         // console.log("variableWrapper:m != null");
-                        // console.log("variableWrapper:m:" + JSON.stringify(m));
+                        // console.log("variableWrapper:m:" + safe_stringify(m, null, 2));
                         // console.log("variableWrapper:m[0]:" + m[0]);
                         fore = (m[1] ? m[1] : '');
                         txt  = (m[2] ? m[2] : '');
@@ -353,7 +471,6 @@ function monkeypatchIntegration (Zotero) {
                                 if (m != null) {
                                     txtend = m[0].length;
                                 }
-                                // .replace(/([$_^{%&])(?!!)/g, "\\$1").replace(/([$_^{%&])!/g, "$1")
                                 return prePunct
                                     + fore
                                     + '\\ztHrefFromBibToURL{#zbibSysID'
@@ -438,17 +555,23 @@ function monkeypatchIntegration (Zotero) {
                     }
                 }
             }
-            else if (linkTitles) {
+            else if (Zotero.Prefs.get('linkTitles')) {
                 //
-                // Zotero.Prefs.get('linkTitles') was true.
-                //
-                // This was pasted directly from:
+                // params.mode !== 'bbl' &&
+                // Zotero.Prefs.get('linkTitles') => true
+                //                //
+                // The following code was initially pasted directly from:
                 //
                 //    ../../zotero/chrome/content/zotero/xpcom/cite.js:Zotero.Cite.System.prototype.setVariableWrapper
                 //
+                //   Handles params.modes === 'html' || 'rtf'
+                //
+
                 if (params.variableNames[0] === 'title'
                     && (params.itemData.URL || params.itemData.URL_REAL || params.itemData.DOI)
                     && params.context === "bibliography") {
+
+                    // console.log("linkTitles, title, bibliography, with URL or DOI present.");
 
                     var URL = null;
                     var DOI = params.itemData.DOI;
@@ -459,21 +582,22 @@ function monkeypatchIntegration (Zotero) {
                         URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
                     }
                     if (URL) {
+                        str = this._variableWrapperCleanString(str, params.mode);
                         if (params.mode === 'rtf') {
                             return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
-                        } else {
+                        } else if (params.mode === 'html') {
                             return prePunct + '<a href="' + URL + '">' + str + '</a>' + postPunct;
                         }
-                    } else {
-                        return (prePunct + str + postPunct);
+                        // org-mode or markdown ?
+                        else {
+                            return (prePunct + str + postPunct);
+                        }
                     }
-                } else {
-                    return (prePunct + str + postPunct);
                 }
             }
-            else {
-                return (prePunct + str + postPunct);
-            }
+            // Fall-through default:
+            str = this._variableWrapperCleanString(str, params.mode);
+            return (prePunct + str + postPunct);
         }
     });
 
@@ -501,34 +625,49 @@ function monkeypatchIntegration (Zotero) {
     //
     // An item_id is going to be an integer, from Zotero.
     //
-    // !!!!! This does not work right. I get an error every time with it defined
-    //
-    // Zotero.Cite.System.prototype.embedBibliographyEntry = function(item_id, state) {
-    //     // Inside here, a "this" is a Zotero.Cite.System...
-    //     // and "state" is a ...?
-    //     return "label1,label2,label3";
-    // }
+    propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, item_id, state) {
+        // state.registry.registry[item_id].ref is
 
-    // propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, item_id, sys_id, state) {
-    //     // state.registry.registry[item_id].ref is 
-    //     return "label1,label2,label3";
-    // });
-}
+        if (state) {
+
+            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state:\n"
+                        + safe_stringify(state, null, 2) + "\n\n");
+
+            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry:\n"
+                        + safe_stringify(state.registry, null, 2) + "\n\n");
+
+            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry:\n"
+                        + safe_stringify(state.registry.registry, null, 2) + "\n\n");
+
+            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry[item_id]:\n"
+                        + safe_stringify(state.registry.registry[item_id], null, 2) + "\n\n");
+        }
+
+        return "STUBTeXLabel1,STUBTeXLabel2,STUBTeXLabel3";
+    });
+
+} // monkeyPatchIntegration
+
 
 
 function monkeyUnpatchIntegration(Zotero) {
+
     Zotero.Integration.Session.prototype.setData.unpatch &&
         Zotero.Integration.Session.prototype.setData.unpatch();
 
     Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
         Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
 
+    Zotero.Integration.Session.prototype._updateCitations.unpatch &&
+        Zotero.Integration.Session.prototype._updateCitations.unpatch();
+
     Zotero.Cite.System.prototype.setVariableWrapper.unpatch &&
         Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
 
-    // Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
-    //     Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
-}
+    Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
+        Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
+
+} // monkeyUnpatchIntegration
 
 
 
