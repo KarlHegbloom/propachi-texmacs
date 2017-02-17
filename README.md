@@ -1,6 +1,6 @@
 # `propachi-texmacs` #
 
-__NOTE: For Juris-M standalone 4.0.29.12m98, please use: [propachi-texmacs v1.1.139beta3](https://github.com/KarlHegbloom/propachi-texmacs/releases/tag/v1.1.139beta3).__
+__NOTE: For Juris-M standalone 4.0.29.12m98, please use: [propachi-texmacs v1.1.139beta6](https://github.com/KarlHegbloom/propachi-texmacs/releases/tag/v1.1.139beta6).__
 
 
 This is a necessary component of the [`zotero-texmacs-integration`](https://github.com/KarlHegbloom/zotero-texmacs-integration) plugin for [TeXmacs](http://www.texmacs.org).
