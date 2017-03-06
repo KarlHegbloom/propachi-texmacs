@@ -161,6 +161,145 @@ function monkeypatchIntegration (Zotero) {
     //--------------------------------------------------------------------------
 
 
+    // Commonly used imports accessible anywhere
+    Components.utils.import("resource://zotero/config.js");
+    Components.utils.import("resource://zotero/q.js");
+    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+    Components.utils.import("resource://gre/modules/Services.jsm");
+
+    // Copied from integration.js to put them in scope here.
+    const INTEGRATION_TYPE_ITEM         = 1;
+    const INTEGRATION_TYPE_BIBLIOGRAPHY = 2;
+    const INTEGRATION_TYPE_TEMP         = 3;
+
+    const FORCE_CITATIONS_FALSE      = 0;
+    const FORCE_CITATIONS_REGENERATE = 1;
+    const FORCE_CITATIONS_RESET_TEXT = 2;
+
+
+    /**
+     * Copied from editCitation then modified.
+     *
+     * Affirms the citation at the cursor position.
+     * @return {Promise}
+     */
+    Zotero.Integration.Document.prototype.affirmCitation = function() {
+        //console.log("Zotero.Integration.Document.prototype.affirmCitation() called.");
+        var me = this;
+        return this._getSession(true, false).then(function() {
+            var field = me._doc.cursorInField(me._session.data.prefs['fieldType']);
+            if(!field) {
+                throw new Zotero.Exception.Alert("integration.error.notInCitation", [],
+                                                 "integration.error.title");
+            }
+            return (new Zotero.Integration.Fields(me._session, me._doc)).affirmCitation(field);
+        });
+    }
+
+
+    Zotero.Integration.Fields.prototype.affirmCitation = function(field) {
+        //console.log("Zotero.Integration.Fields.prototype.affirmCitation() called.");
+
+	var newField, citation, fieldIndex, session = this._session;
+
+	// if there's already a citation, make sure we have item IDs in addition to keys
+	if(field) {
+		try {
+			var code = field.getCode();
+		} catch(e) {}
+
+		if(code) {
+			var [type, content] = this.getCodeTypeAndContent(code);
+			if(type != INTEGRATION_TYPE_ITEM) {
+				throw new Zotero.Exception.Alert("integration.error.notInCitation");
+			}
+
+			try {
+				citation = session.unserializeCitation(content);
+			} catch(e) {}
+
+			if(citation) {
+				try {
+					session.lookupItems(citation);
+				} catch(e) {
+					if(e instanceof Zotero.Integration.MissingItemException) {
+						citation.citationItems = [];
+					} else {
+						throw e;
+					}
+				}
+
+				if(citation.properties.dontUpdate
+						|| (citation.properties.plainCitation
+							&& field.getText() !== citation.properties.plainCitation)) {
+					this._doc.activate();
+					Zotero.debug("[affirmCitation] Attempting to update manually modified citation.\n"
+						+ "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n"
+						+ "Original: " + citation.properties.plainCitation + "\n"
+						+ "Current:  " + field.getText()
+					);
+					if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
+							Components.interfaces.zoteroIntegrationDocument.DIALOG_ICON_WARNING,
+							Components.interfaces.zoteroIntegrationDocument.DIALOG_BUTTONS_OK_CANCEL)) {
+						throw new Zotero.Exception.UserCancelled("editing citation");
+					}
+				}
+
+				// make sure it's going to get updated
+				delete citation.properties["formattedCitation"];
+				delete citation.properties["plainCitation"];
+				delete citation.properties["dontUpdate"];
+			}
+		}
+	} else {
+		newField = true;
+		field = this.addField(true);
+	}
+
+	var me = this;
+	return Q(field).then(function(field) {
+		if(!citation) {
+			field.setCode("TEMP");
+			citation = {"citationItems":[], "properties":{}};
+		}
+
+		var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
+
+                // Instead of calling out to a dialog box to have it ultimately io.accept(_progressCallback),
+                // just do it here, with no waiting, no dialog.
+                //
+		// if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
+		// 	Zotero.Integration.displayDialog(me._doc,
+		// 	'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
+		// 	io);
+		// } else {
+		// 	var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
+		// 		? 'popup' : 'alwaysRaised')+',resizable=false';
+		// 	Zotero.Integration.displayDialog(me._doc,
+		// 	'chrome://zotero/content/integration/quickFormat.xul', mode, io);
+		// }
+                //
+                io.accept(function(pct) {
+                    // do-nothing progress callback.
+                });
+
+		if(newField) {
+			return io.promise.fail(function(e) {
+				// Try to delete new field on failure
+				try {
+					field.delete();
+				} catch(e) {}
+				throw e;
+			});
+		} else {
+			return io.promise;
+		}
+	});
+    }
+
+
+    ////
+    //
     // If I monkeypatch style.setOutputFormat(outputFormat); then how can
     // I ensure that it only changes it in the context of integration.js,
     // and not globally for every use of the citeproc within Juris-M?
@@ -174,7 +313,7 @@ function monkeypatchIntegration (Zotero) {
     //
     // Zotero.Integration.Session.BibliographyEditInterface.prototype._update = function()
     //
-
+    //
     propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
         // data is a Zotero.Integration.DocumentData
         // this.style here is a citeproc...
@@ -249,6 +388,24 @@ function monkeypatchIntegration (Zotero) {
     // });
 
 
+    ////
+    //
+    // The ultimate would be to have a TeXmacs widget there to display
+    // these... But eventually I will also want them in HTML, at the same time,
+    // so that the if-html thing will work right. I want the HTML that is
+    // output by translating a TeXmacs document into an =.html= file to be CSS
+    // and XPATH compatible with the standard Juris-M / Zotero / citeproc-js
+    // HTML output.
+    //
+    // If a generalized format would be useful, perhaps an xml would work well
+    // for it? <i> for italics, <b> for bold, <sc> for small-caps, etc. around
+    // the text inside, and it's easy enough to convert from that format to any
+    // other?
+    //
+    // The so-called 'bbl' outputFormat that this is using is not truly what
+    // you would expect to find in a LaTeX .bbl file any longer. Nonetheless, I
+    // think I'll just leave it named the way it is for the time being.
+    //
     propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
         var ret, new_style;
         var original_style = this.session.style;
@@ -265,6 +422,8 @@ function monkeypatchIntegration (Zotero) {
     });
 
 
+    ////
+    //
     // setVariablewrapper is called from within:
     //
     //   ../../zotero/chrome/content/zotero/xpcom/style.js:Zotero.Style.prototype.getCiteProc
@@ -278,7 +437,7 @@ function monkeypatchIntegration (Zotero) {
     //
     // The sys object is created in Zotero.Style.prototype.getCiteProc, which hands that sys object to
     // new Zotero.CiteProc.CSL.Engine()
-
+    //
     propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
 
         // console.log("setVariableWrapper called.\n");
@@ -297,11 +456,11 @@ function monkeypatchIntegration (Zotero) {
             var XRegExp = Zotero.Utilities.XRegExp;
             // console.log("_variableWrapperCleanString:str before:\n'" + str + "'\n");
             str = XRegExp.replaceEach(str, [
-                    [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)', 'g'), ''], // Sort categorizer prefixes
-                    [XRegExp('((.*?)\\2X-X-X)', 'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
-                    [XRegExp('(X-X-X[  ]?)', 'g'), ''], // X-X-X and maybe a space after ==> ''
-                    [XRegExp('([  ]?\\([  ]*\\))', 'g'), ''], // empty paren and space before ==> ''
-                    [XRegExp('(.*000000000@#)', 'g'), ''],
+                    [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)',  'g'), ''], // Sort categorizer prefixes
+                    [XRegExp('((.*?)\\2X-X-X)',               'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
+                    [XRegExp('(X-X-X[  ]?)',                  'g'), ''], // X-X-X and maybe a space after ==> ''
+                    [XRegExp('([  ]?\\([  ]*\\))',            'g'), ''], // empty paren and space before ==> ''
+                    [XRegExp('(.*000000000@#)',               'g'), ''],
                     [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<$2>$3</$2>"]
                   ]);
 
@@ -625,26 +784,27 @@ function monkeypatchIntegration (Zotero) {
     //
     // An item_id is going to be an integer, from Zotero.
     //
-    propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, item_id, state) {
-        // state.registry.registry[item_id].ref is
+    // propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, item_id, state) {
+    //     // state.registry.registry[item_id].ref is
 
-        if (state) {
+    //     if (state) {
 
-            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state:\n"
-                        + safe_stringify(state, null, 2) + "\n\n");
+    //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state:\n"
+    //                     + safe_stringify(state, null, 2) + "\n\n");
 
-            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry:\n"
-                        + safe_stringify(state.registry, null, 2) + "\n\n");
+    //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry:\n"
+    //                     + safe_stringify(state.registry, null, 2) + "\n\n");
 
-            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry:\n"
-                        + safe_stringify(state.registry.registry, null, 2) + "\n\n");
+    //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry:\n"
+    //                     + safe_stringify(state.registry.registry, null, 2) + "\n\n");
 
-            console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry[item_id]:\n"
-                        + safe_stringify(state.registry.registry[item_id], null, 2) + "\n\n");
-        }
+    //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry[item_id]:\n"
+    //                     + safe_stringify(state.registry.registry[item_id], null, 2) + "\n\n");
+    //     }
 
-        return "STUBTeXLabel1,STUBTeXLabel2,STUBTeXLabel3";
-    });
+    //     return "STUBTeXLabel1,STUBTeXLabel2,STUBTeXLabel3";
+    // });
+
 
 } // monkeyPatchIntegration
 
@@ -666,6 +826,9 @@ function monkeyUnpatchIntegration(Zotero) {
 
     Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
         Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
+
+    Zotero.Integration.Document.prototype.editCitation.unpatch &&
+        Zotero.Integration.Document.prototype.editCitation.unpatch();
 
 } // monkeyUnpatchIntegration
 
