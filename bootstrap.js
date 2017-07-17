@@ -74,13 +74,13 @@ function safe_serializer(replacer, cycleReplacer) {
 
 
 function monkeypatchIntegration (Zotero) {
-    ////////////////////////////////////////////////////////////////////////////
+
+    //////////////////////////////////////////////////////////////
+    //
     // From: https://www.npmjs.com/package/monkeypatch
     //
-    // npm install monkeypatch
+    //   npm install monkeypatch
     //
-    //module.exports = function(obj, method, handler, context) {
-
     var propachi_npm_monkeypatch = function(obj, method, handler, context) {
         var original = obj[method];
 
@@ -106,6 +106,8 @@ function monkeypatchIntegration (Zotero) {
         // Return the original.
         return original;
     };
+
+    //------------------------------------------------------------
     //
     // Examples:
     //
@@ -158,8 +160,12 @@ function monkeypatchIntegration (Zotero) {
     //
     // console.log(Date.now()); // logs current time
     //
-    //--------------------------------------------------------------------------
+    //------------------------------------------------------------
 
+
+    //
+    // Copied from integration.js to put them in scope here.
+    //
 
     // Commonly used imports accessible anywhere
     Components.utils.import("resource://zotero/config.js");
@@ -167,7 +173,12 @@ function monkeypatchIntegration (Zotero) {
     Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
     Components.utils.import("resource://gre/modules/Services.jsm");
 
-    // Copied from integration.js to put them in scope here.
+    const RESELECT_KEY_URI      = 1;
+    const RESELECT_KEY_ITEM_KEY = 2;
+    const RESELECT_KEY_ITEM_ID  = 3;
+
+    const DATA_VERSION = 3;
+
     const INTEGRATION_TYPE_ITEM         = 1;
     const INTEGRATION_TYPE_BIBLIOGRAPHY = 2;
     const INTEGRATION_TYPE_TEMP         = 3;
