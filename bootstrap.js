@@ -1,49 +1,66 @@
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 var Zotero;
 var oldProcessor;
+var installFlag = false;
 
 var style_reset = false;
 
-/*
- * To test changes to this program or to the associated citeproc-js, run:
- *
- *   ./build.sh -A
- *
- * ... from this directory, and then install the plugin from, e.g.,
- *
- *   ./releases/1.1.139/propachi-texmacs-v1.1.139beta4alpha.xpi
- *
- * where ./version/patch.txt contains 138 and ./version/beta.txt contains 3.
- *
- * You can run juris-m (or firefox) from the console to see the console.log messages in order to figure out what's going
- * on inside of the program.
- *
- */
 
-/*
- * Zotero runs citeproc-js synchronously within an async thread. We
- * can retrieve modules synchronously inside citeproc-js, and the
- * additional I/O will not impact the UI. Whew.
- */
-
-function ifZotero(succeed, fail) {
-    var ZoteroClass = Cc["@zotero.org/Zotero;1"];
-    if (ZoteroClass) {
-        Zotero = ZoteroClass
-                .getService(Ci.nsISupports)
-                .wrappedJSObject;
-        succeed ? succeed(Zotero) : null;
-    } else {
-        fail ? fail() : null;
-    }
-}
-
-function replaceProcessor (Zotero) {
+var installProcessor = function() {
+    Zotero = Cc["@zotero.org/Zotero;1"]
+	    .getService(Ci.nsISupports)
+	    .wrappedJSObject;
     oldProcessor = Zotero.CiteProc.CSL;
     Cu.import("resource://gre/modules/Services.jsm");
     Services.scriptloader.loadSubScript("chrome://propachi/content/citeproc.js", this, "UTF-8");
     Zotero.CiteProc.CSL = CSL;
+}.bind(this);
+
+
+var uiObserver = {
+    observe: function(subject, topic, data) {
+        installProcessor();
+    },
+    register: function() {
+        var observerService = Components.classes["@mozilla.org/observer-service;1"]
+            .getService(Components.interfaces.nsIObserverService);
+        observerService.addObserver(this, "final-ui-startup", false);
+    },
+    unregister: function() {
+        var observerService = Components.classes["@mozilla.org/observer-service;1"]
+            .getService(Components.interfaces.nsIObserverService);
+        observerService.removeObserver(this, "final-ui-startup");
+    }
 }
+
+
+
+function startup (data, reason) {
+    if (installFlag) {
+        installProcessor();
+        monkeypatchIntegration();
+    } else {
+        uiObserver.register();
+    }
+}
+
+function shutdown (data, reason) {
+    if (installFlag) {
+        monkeyUnpatchIntegration();
+        Zotero.CiteProc.CSL = oldProcessor;
+        installFlag = false;
+    } else {
+        uiObserver.unregister();
+        Zotero.CiteProc.CSL = oldProcessor;
+    }
+}
+
+function install (data, reason) {
+    installFlag = true;
+}
+
+function uninstall (data, reason) {}
+
 
 
 
@@ -73,7 +90,9 @@ function safe_serializer(replacer, cycleReplacer) {
 }
 
 
-function monkeypatchIntegration (Zotero) {
+
+
+function monkeypatchIntegration () {
 
     //////////////////////////////////////////////////////////////
     //
@@ -187,6 +206,18 @@ function monkeypatchIntegration (Zotero) {
     const FORCE_CITATIONS_REGENERATE = 1;
     const FORCE_CITATIONS_RESET_TEXT = 2;
 
+    const DIALOG_ICON_STOP    = 0;
+    const DIALOG_ICON_WARNING = 1;
+    const DIALOG_ICON_CAUTION = 2;
+
+    const DIALOG_BUTTONS_OK            = 0;
+    const DIALOG_BUTTONS_OK_CANCEL     = 1;
+    const DIALOG_BUTTONS_YES_NO        = 2;
+    const DIALOG_BUTTONS_YES_NO_CANCEL = 3;
+
+    const NOTE_FOOTNOTE = 1;
+    const NOTE_ENDNOTE  = 2;
+
 
     /**
      * Copied from editCitation then modified.
@@ -208,9 +239,7 @@ function monkeypatchIntegration (Zotero) {
     }
 
 
-    Zotero.Integration.Fields.prototype.affirmCitation = function(field) {
-        //console.log("Zotero.Integration.Fields.prototype.affirmCitation() called.");
-
+    Zotero.Integration.Fields.prototype.affirmCitation = Zotero.Promise.coroutine(function* (field) {
 	var newField, citation, fieldIndex, session = this._session;
 
 	// if there's already a citation, make sure we have item IDs in addition to keys
@@ -231,7 +260,7 @@ function monkeypatchIntegration (Zotero) {
 
 			if(citation) {
 				try {
-					session.lookupItems(citation);
+					yield session.lookupItems(citation);
 				} catch(e) {
 					if(e instanceof Zotero.Integration.MissingItemException) {
 						citation.citationItems = [];
@@ -244,14 +273,13 @@ function monkeypatchIntegration (Zotero) {
 						|| (citation.properties.plainCitation
 							&& field.getText() !== citation.properties.plainCitation)) {
 					this._doc.activate();
-					Zotero.debug("[affirmCitation] Attempting to update manually modified citation.\n"
+					Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n"
 						+ "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n"
 						+ "Original: " + citation.properties.plainCitation + "\n"
 						+ "Current:  " + field.getText()
 					);
 					if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
-							Components.interfaces.zoteroIntegrationDocument.DIALOG_ICON_WARNING,
-							Components.interfaces.zoteroIntegrationDocument.DIALOG_BUTTONS_OK_CANCEL)) {
+							DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
 						throw new Zotero.Exception.UserCancelled("editing citation");
 					}
 				}
@@ -268,7 +296,7 @@ function monkeypatchIntegration (Zotero) {
 	}
 
 	var me = this;
-	return Q(field).then(function(field) {
+	return Zotero.Promise.resolve(field).then(function(field) {
 		if(!citation) {
 			field.setCode("TEMP");
 			citation = {"citationItems":[], "properties":{}};
@@ -276,9 +304,6 @@ function monkeypatchIntegration (Zotero) {
 
 		var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
 
-                // Instead of calling out to a dialog box to have it ultimately io.accept(_progressCallback),
-                // just do it here, with no waiting, no dialog.
-                //
 		// if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
 		// 	Zotero.Integration.displayDialog(me._doc,
 		// 	'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
@@ -289,13 +314,13 @@ function monkeypatchIntegration (Zotero) {
 		// 	Zotero.Integration.displayDialog(me._doc,
 		// 	'chrome://zotero/content/integration/quickFormat.xul', mode, io);
 		// }
-                //
+
                 io.accept(function(pct) {
                     // do-nothing progress callback.
                 });
 
 		if(newField) {
-			return io.promise.fail(function(e) {
+			return io.promise.catch(function(e) {
 				// Try to delete new field on failure
 				try {
 					field.delete();
@@ -306,26 +331,11 @@ function monkeypatchIntegration (Zotero) {
 			return io.promise;
 		}
 	});
-    }
+    });
 
 
-    ////
-    //
-    // If I monkeypatch style.setOutputFormat(outputFormat); then how can
-    // I ensure that it only changes it in the context of integration.js,
-    // and not globally for every use of the citeproc within Juris-M?
-    //
-    // I think I can monkeypatch only one instance...
-    //
-    // It is set in only two places:
-    //
-    // ../../zotero/chrome/content/zotero/xpcom/integration.js
-    // Zotero.Integration.Session.prototype.setData = function(data, resetStyle)
-    //
-    // Zotero.Integration.Session.BibliographyEditInterface.prototype._update = function()
-    //
-    //
-    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', function(original, data, resetStyle) {
+
+    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
         // data is a Zotero.Integration.DocumentData
         // this.style here is a citeproc...
         var oldStyle = (this.data && this.data.style ? this.data.style : false);
@@ -336,14 +346,14 @@ function monkeypatchIntegration (Zotero) {
             // After it's done, we re-set the style. It really is this.style, not this.data.style here.
             // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
             // Above the call to original(...) above, it might not have. It may have been reset, or not.
-            outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+            outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
             this.style.setOutputFormat(outputFormat);
             // pro-actively monkeypatch it for good measure.
             original_style = this.style;
             if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
                 new_style = Object.create(this.style);
                 new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                    var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                    var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
                     original_style.setOutputFormat(outputFormat);
                 };
                 new_style.setOutputFormat_is_propachi_monkeypatched = true;
@@ -352,7 +362,7 @@ function monkeypatchIntegration (Zotero) {
             style_reset = true; // for variableWrapper, below.
         }
         return ret;
-    });
+    }));
 
 
     // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, '_updateCitations', function(original) {
@@ -413,17 +423,13 @@ function monkeypatchIntegration (Zotero) {
     // the text inside, and it's easy enough to convert from that format to any
     // other?
     //
-    // The so-called 'bbl' outputFormat that this is using is not truly what
-    // you would expect to find in a LaTeX .bbl file any longer. Nonetheless, I
-    // think I'll just leave it named the way it is for the time being.
-    //
     propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
         var ret, new_style;
         var original_style = this.session.style;
         if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
             new_style = Object.create(this.session.style);
             new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "bbl";
+                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
                 original_style.setOutputFormat(outputFormat);
             };
             new_style.setOutputFormat_is_propachi_monkeypatched = true;
@@ -477,8 +483,8 @@ function monkeypatchIntegration (Zotero) {
 
             // console.log("_variableWrapperCleanString:str after first replaceEach:\n'" + str + "'\n");
 
-            if (mode && mode === 'bbl') {
-                // console.log("_variableWrapperCleanString:mode: bbl");
+            if (mode && mode === 'tmzoterolatex') {
+                // console.log("_variableWrapperCleanString:mode: tmzoterolatex");
                 str = XRegExp.replaceEach(str, [
                         [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
                       ]);
@@ -505,7 +511,7 @@ function monkeypatchIntegration (Zotero) {
         this.variableWrapper = function(params, prePunct, str, postPunct) {
 
 
-            if (params.mode === "bbl") {
+            if (params.mode === "tmzoterolatex") {
 
                 // console.log("variableWrapper:params:\n#+BEGIN_EXAMPLE json\n" + JSON.stringify(params) + "\n#+END_EXAMPLE json\n");
 
@@ -727,7 +733,7 @@ function monkeypatchIntegration (Zotero) {
             }
             else if (Zotero.Prefs.get('linkTitles')) {
                 //
-                // params.mode !== 'bbl' &&
+                // params.mode !== 'tmzoterolatex' &&
                 // Zotero.Prefs.get('linkTitles') => true
                 //                //
                 // The following code was initially pasted directly from:
@@ -746,13 +752,15 @@ function monkeypatchIntegration (Zotero) {
                     var URL = null;
                     var DOI = params.itemData.DOI;
                     if (DOI) {
-                        URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI)
+                        URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI)
                     }
                     if (!URL) {
                         URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
                     }
                     if (URL) {
+
                         str = this._variableWrapperCleanString(str, params.mode);
+
                         if (params.mode === 'rtf') {
                             return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
                         } else if (params.mode === 'html') {
@@ -789,7 +797,7 @@ function monkeypatchIntegration (Zotero) {
     //
     //-------------------------------------------------------------
     //
-    // this.item_id, state (from bbl) this.item_id (from html)
+    // this.item_id, state (from tmzoterolatex) this.item_id (from html)
     //
     //  "this" in that context is a CSL.Output.Formats
     //
@@ -821,86 +829,24 @@ function monkeypatchIntegration (Zotero) {
 
 
 
-function monkeyUnpatchIntegration(Zotero) {
+function monkeyUnpatchIntegration() {
 
     Zotero.Integration.Session.prototype.setData.unpatch &&
         Zotero.Integration.Session.prototype.setData.unpatch();
 
+    // Zotero.Integration.Session.prototype._updateCitations.unpatch &&
+    //     Zotero.Integration.Session.prototype._updateCitations.unpatch();
+
     Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
         Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
-
-    Zotero.Integration.Session.prototype._updateCitations.unpatch &&
-        Zotero.Integration.Session.prototype._updateCitations.unpatch();
 
     Zotero.Cite.System.prototype.setVariableWrapper.unpatch &&
         Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
 
-    Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
-        Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
+    // Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
+    //     Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
 
-    Zotero.Integration.Document.prototype.editCitation.unpatch &&
-        Zotero.Integration.Document.prototype.editCitation.unpatch();
+    // Zotero.Integration.Document.prototype.editCitation.unpatch &&
+    //     Zotero.Integration.Document.prototype.editCitation.unpatch();
 
 } // monkeyUnpatchIntegration
-
-
-
-function UiObserver() {
-    this.register();
-}
-
-UiObserver.prototype = {
-    observe: function(subject, topic, data) {
-        ifZotero(
-            function (Zotero) {
-                replaceProcessor(Zotero);
-                monkeypatchIntegration(Zotero);
-            },
-            null
-        );
-    },
-    register: function() {
-        var observerService = Components.classes["@mozilla.org/observer-service;1"]
-            .getService(Components.interfaces.nsIObserverService);
-        observerService.addObserver(this, "final-ui-startup", false);
-    },
-    unregister: function() {
-        var observerService = Components.classes["@mozilla.org/observer-service;1"]
-            .getService(Components.interfaces.nsIObserverService);
-        observerService.removeObserver(this, "final-ui-startup");
-    }
-}
-var uiObserver = new UiObserver();
-
-
-/*
- * Bootstrap functions
- */
-
-function startup (data, reason) {
-    ifZotero(
-        function (Zotero) {
-            // Set immediately if we have Zotero
-            replaceProcessor(Zotero);
-            monkeypatchIntegration(Zotero);
-        },
-        function () {
-            // If not, assume it will arrive by the end of UI startup
-            uiObserver.register();
-        }
-    );
-}
-
-function shutdown (data, reason) {
-    uiObserver.unregister();
-    ifZotero(
-        function (Zotero) {
-            Zotero.CiteProc.CSL = oldProcessor;
-            monkeyUnpatchIntegration(Zotero);
-        },
-        null
-    );
-}
-
-function install (data, reason) {}
-function uninstall (data, reason) {}
