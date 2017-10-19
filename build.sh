@@ -7,6 +7,9 @@ set -e
 # Constants
 PRODUCT="Propachi: CSL processor monkey-patch for Zotero (TeXmacs Support)"
 IS_BETA="true"
+# GITHUBUSER=Juris-M
+GITHUBUSER=KarlHegbloom
+# DOORKEY=
 FORK="propachi-texmacs"
 BRANCH="propachi-texmacs-master"
 CLIENT="propachi-texmacs"
@@ -52,20 +55,32 @@ function xx-read-version-from-processor-code () {
 }
 
 function xx-make-the-bundle () {
-    find . -name '.hg' -prune -o \
-        -name '.hgignore' -prune -o \
-        -name '.gitmodules' -prune -o \
-        -name '*~' -prune -o \
-        -name '.git' -prune -o \
-        -name 'attic' -prune -o \
-        -name '.hgsub' -prune -o \
-        -name '.hgsubstate' -prune -o \
-        -name '*.bak' -prune -o \
-        -name 'version' -prune -o \
-        -name 'releases' -prune -o \
-        -name 'sh-lib' -prune -o \
-        -name 'build.sh' -prune -o \
-        -print \
+    find . \
+         -name '*.bak' -prune -o \
+         -name '*~' -prune -o \
+         -name '*TEMPlATE.rdf' -prune -o \
+         -name '.emacs*' -prune -o \
+         -name '.eslintrc ' -prune -o \
+         -name '.git' -prune -o \
+         -name '.gitignore' -prune -o \
+         -name '.gitmodules' -prune -o \
+         -name '.hg' -prune -o \
+         -name '.hgignore' -prune -o \
+         -name '.hgsub' -prune -o \
+         -name '.hgsubstate' -prune -o \
+         -name '.jscsrc' -prune -o \
+         -name '.jshintrc' -prune -o \
+         -name 'api_key.txt' -prune -o \
+         -name 'api_secret.txt' -prune -o \
+         -name 'attic' -prune -o \
+         -name 'build.sh' -prune -o \
+         -name 'jm-sh' -prune -o \
+         -name 'jscs.d' -prune -o \
+         -name 'node_modules' -prune -o \
+         -name 'releases' -prune -o \
+         -name 'sh-lib' -prune -o \
+         -name 'version' -prune -o \
+         -print \
         | xargs zip "${XPI_FILE}" >> "${LOG_FILE}"
 }
 
