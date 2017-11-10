@@ -26,8 +26,8 @@ function xx-fetch-latest-processor () {
     cd ../citeproc-js
     ./test.py -B
     cp citeproc.js "${SCRIPT_DIR}/chrome/content/citeproc.js"
-    sed -si 's/this\.development_extensions\.main_title_from_short_title = false/this\.development_extensions\.main_title_from_short_title = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
-    sed -si 's/this\.development_extensions\.uppercase_subtitles = false/this\.development_extensions\.uppercase_subtitles = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
+    # sed -si 's/this\.development_extensions\.main_title_from_short_title = false/this\.development_extensions\.main_title_from_short_title = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
+    # sed -si 's/this\.development_extensions\.uppercase_subtitles = false/this\.development_extensions\.uppercase_subtitles = true/' "${SCRIPT_DIR}/chrome/content/citeproc.js"
     cd "${SCRIPT_DIR}"
 }
 
@@ -55,33 +55,7 @@ function xx-read-version-from-processor-code () {
 }
 
 function xx-make-the-bundle () {
-    find . \
-         -name '*.bak' -prune -o \
-         -name '*~' -prune -o \
-         -name '*TEMPlATE.rdf' -prune -o \
-         -name '.emacs*' -prune -o \
-         -name '.eslintrc ' -prune -o \
-         -name '.git' -prune -o \
-         -name '.gitignore' -prune -o \
-         -name '.gitmodules' -prune -o \
-         -name '.hg' -prune -o \
-         -name '.hgignore' -prune -o \
-         -name '.hgsub' -prune -o \
-         -name '.hgsubstate' -prune -o \
-         -name '.jscsrc' -prune -o \
-         -name '.jshintrc' -prune -o \
-         -name 'api_key.txt' -prune -o \
-         -name 'api_secret.txt' -prune -o \
-         -name 'attic' -prune -o \
-         -name 'build.sh' -prune -o \
-         -name 'jm-sh' -prune -o \
-         -name 'jscs.d' -prune -o \
-         -name 'node_modules' -prune -o \
-         -name 'releases' -prune -o \
-         -name 'sh-lib' -prune -o \
-         -name 'version' -prune -o \
-         -print \
-        | xargs zip "${XPI_FILE}" >> "${LOG_FILE}"
+    zip -r "${XPI_FILE}" chrome.manifest install.rdf bootstrap.js chrome/ update.rdf >> "${LOG_FILE}"
 }
 
 function build-the-plugin () {

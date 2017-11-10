@@ -3,3 +3,11 @@ citeproc-js
 releases
 api_key.txt
 api_secret.txt
+.emacs*
+.eslintrc
+.jscsrc
+.jshintrc
+jscs.d
+node_modules
+package-lock.json
+package.json

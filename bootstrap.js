@@ -1,106 +1,89 @@
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+/* jshint undef: true, unused: true, curly: false, eqeqeq: true */
+/* globals Components: false, Services:false, CSL:false */
+/* exported Zotero */
+
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 var Zotero;
-var oldProcessor;
+
+var oldProcessor = false;
 var installFlag = false;
 
-var style_reset = false;
+var prefOutputFormat; // "integration.outputFormat"
+var prefMaxMaxOffset; // "integration.maxmaxOffset"
 
+var styleReset = false;
 
-var installProcessor = function() {
-    Zotero = Cc["@zotero.org/Zotero;1"]
-	    .getService(Ci.nsISupports)
-	    .wrappedJSObject;
+/*
+ * Zotero runs citeproc-js synchronously within an async thread. We
+ * can retrieve modules synchronously inside citeproc-js, and the
+ * additional I/O will not impact the UI. Whew.
+ */
+
+function ifZotero(succeed, fail) {
+    var ZoteroClass = Cc["@zotero.org/Zotero;1"];
+    if (ZoteroClass) {
+        Zotero = ZoteroClass
+            .getService(Ci.nsISupports)
+            .wrappedJSObject;
+        succeed ? succeed(Zotero) : null;
+    } else {
+        fail ? fail() : null;
+    }
+}
+
+function replaceProcessor (Zotero) {
     oldProcessor = Zotero.CiteProc.CSL;
     Cu.import("resource://gre/modules/Services.jsm");
     Services.scriptloader.loadSubScript("chrome://propachi/content/citeproc.js", this, "UTF-8");
     Zotero.CiteProc.CSL = CSL;
+}
+
+var installProcessor = function() {
+    if (! oldProcessor) {
+        Zotero = Cc['@zotero.org/Zotero;1']
+            .getService(Ci.nsISupports)
+            .wrappedJSObject;
+        oldProcessor = Zotero.CiteProc.CSL;
+        Cu.import('resource://gre/modules/Services.jsm');
+        Services.scriptloader.loadSubScript('chrome://propachi-texmacs/content/citeproc.js', this, 'UTF-8');
+        Zotero.CiteProc.CSL = CSL;
+    }
 }.bind(this);
 
+// function safeStringify(obj, replacer, spaces, cycleReplacer) {
+//     return JSON.stringify(obj, safeSerializer(replacer, cycleReplacer), spaces);
+// }
 
-var uiObserver = {
-    observe: function(subject, topic, data) {
-        installProcessor();
-    },
-    register: function() {
-        var observerService = Components.classes["@mozilla.org/observer-service;1"]
-            .getService(Components.interfaces.nsIObserverService);
-        observerService.addObserver(this, "final-ui-startup", false);
-    },
-    unregister: function() {
-        var observerService = Components.classes["@mozilla.org/observer-service;1"]
-            .getService(Components.interfaces.nsIObserverService);
-        observerService.removeObserver(this, "final-ui-startup");
-    }
-}
+// function safeSerializer(replacer, cycleReplacer) {
+//     var stack = [], keys = [];
 
+//     if (cycleReplacer === null)
+//         cycleReplacer = function(key, value) {
+//             if (stack[0] === value) { return '[Circular ~]'; }
+//             return '[Circular ~.' + keys.slice(0, stack.indexOf(value)).join('.') + ']';
+//         };
 
+//     return function(key, value) {
+//         if (stack.length > 0) {
+//             var thisPos = stack.indexOf(this);
+//             ~thisPos ? stack.splice(thisPos + 1) : stack.push(this);
+//             ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key);
+//             if (~stack.indexOf(value)) value = cycleReplacer.call(this, key, value);
+//         }
+//         else stack.push(value);
 
-function startup (data, reason) {
-    if (installFlag) {
-        installProcessor();
-        monkeypatchIntegration();
-    } else {
-        uiObserver.register();
-    }
-}
-
-function shutdown (data, reason) {
-    if (installFlag) {
-        monkeyUnpatchIntegration();
-        Zotero.CiteProc.CSL = oldProcessor;
-        installFlag = false;
-    } else {
-        uiObserver.unregister();
-        Zotero.CiteProc.CSL = oldProcessor;
-    }
-}
-
-function install (data, reason) {
-    installFlag = true;
-}
-
-function uninstall (data, reason) {}
+//         return replacer === null ? value : replacer.call(this, key, value);
+//     };
+// }
 
 
-
-
-function safe_stringify(obj, replacer, spaces, cycleReplacer) {
-    return JSON.stringify(obj, safe_serializer(replacer, cycleReplacer), spaces)
-}
-
-function safe_serializer(replacer, cycleReplacer) {
-  var stack = [], keys = []
-
-  if (cycleReplacer == null) cycleReplacer = function(key, value) {
-    if (stack[0] === value) return "[Circular ~]"
-    return "[Circular ~." + keys.slice(0, stack.indexOf(value)).join(".") + "]"
-  }
-
-  return function(key, value) {
-    if (stack.length > 0) {
-      var thisPos = stack.indexOf(this)
-      ~thisPos ? stack.splice(thisPos + 1) : stack.push(this)
-      ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key)
-      if (~stack.indexOf(value)) value = cycleReplacer.call(this, key, value)
-    }
-    else stack.push(value)
-
-    return replacer == null ? value : replacer.call(this, key, value)
-  }
-}
-
-
-
-
-function monkeypatchIntegration () {
-
-    //////////////////////////////////////////////////////////////
+function monkeyPatchIntegration() {
     //
     // From: https://www.npmjs.com/package/monkeypatch
     //
     //   npm install monkeypatch
     //
-    var propachi_npm_monkeypatch = function(obj, method, handler, context) {
+    var propachiNpmMonkeypatch = function(obj, method, handler, context) {
         var original = obj[method];
 
         // Unpatch first if already patched.
@@ -187,10 +170,10 @@ function monkeypatchIntegration () {
     //
 
     // Commonly used imports accessible anywhere
-    Components.utils.import("resource://zotero/config.js");
-    Components.utils.import("resource://zotero/q.js");
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-    Components.utils.import("resource://gre/modules/Services.jsm");
+    Components.utils.import('resource://zotero/config.js');
+    Components.utils.import('resource://zotero/q.js');
+    Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
+    Components.utils.import('resource://gre/modules/Services.jsm');
 
     const RESELECT_KEY_URI      = 1;
     const RESELECT_KEY_ITEM_KEY = 2;
@@ -220,15 +203,23 @@ function monkeypatchIntegration () {
 
 
     /**
-     * Copied from editCitation then modified.
+     * Copied and modified from:
+     *   Zotero.Integration.Document.prototype.addEditCitation
      *
      * Affirms the citation at the cursor position.
+     *
+     *   It works exactly like addEditCitation except that there is no dialog
+     *   presented for modifying the citation cluster being affirmed. This is
+     *   used to get a retypeset citation cluster after editor-side modifications
+     *   via cut and paste of sub-citations inside the citation cluster,
+     *   etc. (See, e.g., tm-zotero.scm for clipboard-cut, etc.)
+     *
      * @return {Promise}
      */
     Zotero.Integration.Document.prototype.affirmCitation = function() {
-        //console.log("Zotero.Integration.Document.prototype.affirmCitation() called.");
+        // console.log("Zotero.Integration.Document.prototype.affirmCitation() called.");
         var me = this;
-        return this._getSession(true, false).then(function() {
+        return this._getSession(true, false).then(function () {
             var field = me._doc.cursorInField(me._session.data.prefs['fieldType']);
             if(!field) {
                 throw new Zotero.Exception.Alert("integration.error.notInCitation", [],
@@ -236,142 +227,179 @@ function monkeypatchIntegration () {
             }
             return (new Zotero.Integration.Fields(me._session, me._doc)).affirmCitation(field);
         });
-    }
+    };
 
+    /*
+     * Copied and modified from:
+     *   Zotero.Integration.Fields.prototype.addEditCitation
+     */
+    Zotero.Integration.Fields.prototype.affirmCitation =
+          Zotero.Promise.coroutine(function* (field) {
+              var newField, citation, /* fieldIndex, */ code, session = this._session;
 
-    Zotero.Integration.Fields.prototype.affirmCitation = Zotero.Promise.coroutine(function* (field) {
-	var newField, citation, fieldIndex, session = this._session;
+              // if there's already a citation, make sure we have item IDs in addition to keys
+              if (field) {
+                  try {
+                      code = field.getCode();
+                  } catch(e) {}
 
-	// if there's already a citation, make sure we have item IDs in addition to keys
-	if(field) {
-		try {
-			var code = field.getCode();
-		} catch(e) {}
+                  if(code) {
+                      var [type, content] = this.getCodeTypeAndContent(code);
+                      if(type !== INTEGRATION_TYPE_ITEM) {
+                          throw new Zotero.Exception.Alert("integration.error.notInCitation");
+                      }
 
-		if(code) {
-			var [type, content] = this.getCodeTypeAndContent(code);
-			if(type != INTEGRATION_TYPE_ITEM) {
-				throw new Zotero.Exception.Alert("integration.error.notInCitation");
-			}
+                      try {
+                          citation = session.unserializeCitation(content);
+                      } catch(e) {}
 
-			try {
-				citation = session.unserializeCitation(content);
-			} catch(e) {}
+                      if(citation) {
+                          try {
+                              yield session.lookupItems(citation);
+                          } catch(e) {
+                              if(e instanceof Zotero.Integration.MissingItemException) {
+                                  citation.citationItems = [];
+                              } else {
+                                  throw e;
+                              }
+                          }
 
-			if(citation) {
-				try {
-					yield session.lookupItems(citation);
-				} catch(e) {
-					if(e instanceof Zotero.Integration.MissingItemException) {
-						citation.citationItems = [];
-					} else {
-						throw e;
-					}
-				}
+                          if(citation.properties.dontUpdate ||
+                             (citation.properties.plainCitation &&
+                              field.getText() !== citation.properties.plainCitation)) {
+                              this._doc.activate();
+                              Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n" +
+                                           "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n" +
+                                           "Original: " + citation.properties.plainCitation + "\n" +
+                                           "Current:  " + field.getText());
+                              if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
+                                                         DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
+                                  throw new Zotero.Exception.UserCancelled("editing citation");
+                              }
+                          }
 
-				if(citation.properties.dontUpdate
-						|| (citation.properties.plainCitation
-							&& field.getText() !== citation.properties.plainCitation)) {
-					this._doc.activate();
-					Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n"
-						+ "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n"
-						+ "Original: " + citation.properties.plainCitation + "\n"
-						+ "Current:  " + field.getText()
-					);
-					if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
-							DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
-						throw new Zotero.Exception.UserCancelled("editing citation");
-					}
-				}
+                          // make sure it's going to get updated
+                          delete citation.properties.formattedCitation;
+                          delete citation.properties.plainCitation;
+                          delete citation.properties.dontUpdate;
+                      }
+                  }
+              } else {
+                  // For affirmCitation it makes no sense for there to *not* be
+                  // a citation, where in addEditCitation it does make sense.
+                  // newField = true;
+                  // field = this.addField(true);
+                  throw new Zotero.Exception.Alert("integration.error.notInCitation");
+              }
 
-				// make sure it's going to get updated
-				delete citation.properties["formattedCitation"];
-				delete citation.properties["plainCitation"];
-				delete citation.properties["dontUpdate"];
-			}
-		}
-	} else {
-		newField = true;
-		field = this.addField(true);
-	}
+              var me = this;
+              return Zotero.Promise.resolve(field).then(function (field) {
+                  if(!citation) {
+                      field.setCode("TEMP");
+                      citation = {"citationItems":[], "properties":{}};
+                  }
 
-	var me = this;
-	return Zotero.Promise.resolve(field).then(function(field) {
-		if(!citation) {
-			field.setCode("TEMP");
-			citation = {"citationItems":[], "properties":{}};
-		}
+                  var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
 
-		var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
+                  // affirmCitation does not need to present the dialog like addEditCitation did:
+                  //
+                  // if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
+                  //     Zotero.Integration.displayDialog(me._doc,
+                  //     'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
+                  //     io);
+                  // } else {
+                  //     var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
+                  //         ? 'popup' : 'alwaysRaised')+',resizable=false';
+                  //     Zotero.Integration.displayDialog(me._doc,
+                  //     'chrome://zotero/content/integration/quickFormat.xul', mode, io);
+                  // }
+                  //
 
-		// if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
-		// 	Zotero.Integration.displayDialog(me._doc,
-		// 	'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
-		// 	io);
-		// } else {
-		// 	var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
-		// 		? 'popup' : 'alwaysRaised')+',resizable=false';
-		// 	Zotero.Integration.displayDialog(me._doc,
-		// 	'chrome://zotero/content/integration/quickFormat.xul', mode, io);
-		// }
+                  io.accept(function (pct) {
+                      // do-nothing progress callback for affirmCitation...
+                  });
 
-                io.accept(function(pct) {
-                    // do-nothing progress callback.
-                });
+                  if(newField) {
+                      return io.promise.catch(function (e) {
+                          // Try to delete new field on failure
+                          try {
+                              field.delete();
+                          } catch (e) {}
+                          throw e;
+                      });
+                  } else {
+                      return io.promise;
+                  }
+              });
+          });
 
-		if(newField) {
-			return io.promise.catch(function(e) {
-				// Try to delete new field on failure
-				try {
-					field.delete();
-				} catch(e) {}
-				throw e;
-			});
-		} else {
-			return io.promise;
-		}
-	});
-    });
-
-
-
-    propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
+    //
+    // Instead of having to monkey patch the setOutputFormat thing like this, I
+    // think we should make the out-of-the-box one support the
+    // integration.outputFormat pref setting, making the argument optional, and
+    // then make integration.js respect the setting of that pref setting, to
+    // make it outputFormat agnostic.
+    //
+    // Another thing that can help with that would be to make it so that there
+    // can be separate functions run at certain points within integration.js
+    // that are outputFormat dependant, to eliminate the need for long if then
+    // switches and having to edit or monkeypatch integration.js to add support
+    // for a new outputFormat.
+    //
+    // With an outputFormat agnostic integration.js, support for other editors
+    // becomes possible, as demonstrated by this zotero-texmacs-integration. An
+    // HTML or Markdown editor could just as easily utilize Juris-M / Zotero if
+    // is possible to set the outputFormat and then use the same integration
+    // wire protocol.
+    //
+    // In case somebody wants to edit a document in OpenOffice, and at the same
+    // time, edit one in TeXmacs, that outputFormat will need to be associated
+    // with each DocumentData... or editor integration plugin requested
+    // outputFormat, and thus each Session... It should not be necessary to
+    // edit the integration.js to plug in a new editor and outputFormat.
+    //
+    // Obviously a settings interface to changing the outputFormat isn’t what
+    // this calls for. That setting must be a property set up during the
+    // initiation of the integration command in play, just as the DocumentData
+    // etc. is now.
+    //
+    propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
         // data is a Zotero.Integration.DocumentData
         // this.style here is a citeproc...
         var oldStyle = (this.data && this.data.style ? this.data.style : false);
         var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
-        var outputFormat, new_style, original_style;
+        var outputFormat, newStyle, originalStyle;
         // Same conditions by which original() determines whether to reset the style, using same information.
         if(data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
             // After it's done, we re-set the style. It really is this.style, not this.data.style here.
             // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
             // Above the call to original(...) above, it might not have. It may have been reset, or not.
-            outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
+            outputFormat = Zotero.Prefs.get('integration.outputFormat') || 'tmzoterolatex';
             this.style.setOutputFormat(outputFormat);
             // pro-actively monkeypatch it for good measure.
-            original_style = this.style;
-            if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
-                new_style = Object.create(this.style);
-                new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                    var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
-                    original_style.setOutputFormat(outputFormat);
+            originalStyle = this.style;
+            if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
+                newStyle = Object.create(this.style);
+                newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+                    var outputFormat = Zotero.Prefs.get('integration.outputFormat') || 'tmzoterolatex';
+                    originalStyle.setOutputFormat(outputFormat);
                 };
-                new_style.setOutputFormat_is_propachi_monkeypatched = true;
-                this.style = new_style;
+                newStyle.setOutputFormat_is_propachi_monkeypatched = true;
+                this.style = newStyle;
             }
-            style_reset = true; // for variableWrapper, below.
+            styleReset = true; // for variableWrapper, below.
         }
         return ret;
-    }));
+    } ) );
 
 
     // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, '_updateCitations', function(original) {
     //     var XRegExp = Zotero.Utilities.XRegExp;
     //     for each(var indexList in [this.newIndices, this.updateIndices]) {
-    //     	for(var index in indexList) {
+    //         for(var index in indexList) {
     //                     var indexstr = index;
-    //     		index = parseInt(index);
-    //     		var citation = this.citationsByIndex[index];
+    //             index = parseInt(index);
+    //             var citation = this.citationsByIndex[index];
     //                     console.log("_updateCitations:index:" + indexstr + ":citation before:" + safe_stringify(citation, null, 2));
     //                     var field, formattedCitation;
     //                     if (citation.properties && citation.properties.field) {
@@ -403,7 +431,7 @@ function monkeypatchIntegration () {
     //                         }
     //                     }
     //                     console.log("_updateCitations:index:" + indexstr + ":citation after:" + safe_stringify(citation, null, 2));
-    //     	}
+    //         }
     //     }
     //     return original();
     // });
@@ -423,17 +451,17 @@ function monkeypatchIntegration () {
     // the text inside, and it's easy enough to convert from that format to any
     // other?
     //
-    propachi_npm_monkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
-        var ret, new_style;
-        var original_style = this.session.style;
-        if (! original_style.setOutputFormat_is_propachi_monkeypatched) {
-            new_style = Object.create(this.session.style);
-            new_style.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+    propachiNpmMonkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
+        var ret, newStyle;
+        var originalStyle = this.session.style;
+        if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
+            newStyle = Object.create(this.session.style);
+            newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
                 var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
-                original_style.setOutputFormat(outputFormat);
+                originalStyle.setOutputFormat(outputFormat);
             };
-            new_style.setOutputFormat_is_propachi_monkeypatched = true;
-            this.session.style = new_style;
+            newStyle.setOutputFormat_is_propachi_monkeypatched = true;
+            this.session.style = newStyle;
         }
         return original(); // calls on setOutputFormat internally.
     });
@@ -455,7 +483,7 @@ function monkeypatchIntegration () {
     // The sys object is created in Zotero.Style.prototype.getCiteProc, which hands that sys object to
     // new Zotero.CiteProc.CSL.Engine()
     //
-    propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
+    propachiNpmMonkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
 
         // console.log("setVariableWrapper called.\n");
 
@@ -464,42 +492,36 @@ function monkeypatchIntegration () {
         var do_not_run_wrapper = false;
 
         Zotero.Cite.System.prototype._variableWrapperCleanString = function(str, mode) {
-            //
-            // Experimentally strip out the sorting prefix here to see if the
-            // same reference entries can then be used for export to HTML also.
-            //
-            // It did not do what I was expecting. Abandoned for now.
-            //
             var XRegExp = Zotero.Utilities.XRegExp;
             // console.log("_variableWrapperCleanString:str before:\n'" + str + "'\n");
             str = XRegExp.replaceEach(str, [
-                    [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)',  'g'), ''], // Sort categorizer prefixes
-                    [XRegExp('((.*?)\\2X-X-X)',               'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
-                    [XRegExp('(X-X-X[  ]?)',                  'g'), ''], // X-X-X and maybe a space after ==> ''
-                    [XRegExp('([  ]?\\([  ]*\\))',            'g'), ''], // empty paren and space before ==> ''
-                    [XRegExp('(.*000000000@#)',               'g'), ''],
-                    [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<$2>$3</$2>"]
-                  ]);
+                [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)',  'g'), ''], // Sort categorizer prefixes
+                [XRegExp('((.*?)\\2X-X-X)',               'g'), ''], // 'repeatrepeatX-X-X' ==> ''
+                [XRegExp('(X-X-X[  ]?)',                  'g'), ''], // X-X-X and maybe a space after ==> ''
+                [XRegExp('([  ]?\\([  ]*\\))',            'g'), ''], // empty paren and space before ==> ''
+                [XRegExp('(.*000000000@#)',               'g'), ''], // Sort prefix for category heading ==> ''
+                [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<div class=\"$2\">$3</div>"]
+            ]);
 
             // console.log("_variableWrapperCleanString:str after first replaceEach:\n'" + str + "'\n");
 
             if (mode && mode === 'tmzoterolatex') {
                 // console.log("_variableWrapperCleanString:mode: tmzoterolatex");
                 str = XRegExp.replaceEach(str, [
-                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
-                      ]);
+                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
+                ]);
             }
             else if (mode && mode === 'html') {
                 // console.log("_variableWrapperCleanString:mode: html");
                 str = XRegExp.replaceEach(str, [
-                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "<div class=\"$2\">$3</div>"]
-                      ]);
+                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "<div class=\"$2\">$3</div>"]
+                ]);
             }
             else {
                 // console.log("_variableWrapperCleanString:mode: UNKNOWN");
                 str = XRegExp.replaceEach(str, [
-                        [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "$3"]
-                      ]);
+                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "$3"]
+                ]);
             }
 
             // console.log("_variableWrapperCleanString:str after:\n'" + str + "'\n");
@@ -515,7 +537,7 @@ function monkeypatchIntegration () {
 
                 // console.log("variableWrapper:params:\n#+BEGIN_EXAMPLE json\n" + JSON.stringify(params) + "\n#+END_EXAMPLE json\n");
 
-                var this_itemID = params.context + "_" + params.itemData.id.toString();
+                var thisItemID = params.context + "_" + params.itemData.id.toString();
 
                 // console.log("variableWrapper:last_itemID:" + last_itemID);
                 // console.log("variableWrapper:this_itemID:" + this_itemID);
@@ -545,22 +567,22 @@ function monkeypatchIntegration () {
                 // addCitation or editCitation is not for the same itemData.id as the last one. I assume that the style
                 // won't get reset in the middle of outputing a citation or bibliography entry.
                 //
-                if (style_reset) {
-                    last_itemID = "";
-                    style_reset = false;
+                if (styleReset) {
+                    lastItemID = "";
+                    styleReset = false;
                 }
 
-                if (this_itemID !== last_itemID) {
-                    first_variableName = params.variableNames[0];
-                    do_not_run_wrapper = false;
+                if (thisItemID !== lastItemID) {
+                    firstVariableName = params.variableNames[0];
+                    doNotRunWrapper = false;
                 }
-                else if (this_itemID === last_itemID &&
-                         first_variableName === params.variableNames[0]) {
-                    do_not_run_wrapper = false;
+                else if (thisItemID === lastItemID &&
+                         firstVariableName === params.variableNames[0]) {
+                    doNotRunWrapper = false;
                 }
-                else if (this_itemID === last_itemID &&
-                         first_variableName !== params.variableNames[0]) {
-                    do_not_run_wrapper = true;
+                else if (thisItemID === lastItemID &&
+                         firstVariableName !== params.variableNames[0]) {
+                    doNotRunWrapper = true;
                 }
 
                 // This will only run most of this function's code for the first variable in a citation or bibliography
@@ -625,7 +647,7 @@ function monkeypatchIntegration () {
                     var URL = null;
                     var DOI = params.itemData.DOI;
                     if (DOI) {
-                        URL = 'http://dx.doi.org/' + Zotero.Utilities.cleanDOI(DOI);
+                        URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI);
                     }
                     if (!URL) {
                         URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
@@ -648,29 +670,29 @@ function monkeypatchIntegration () {
                                     txtend = m[0].length;
                                 }
                                 return prePunct
-                                    + fore
-                                    + '\\ztHrefFromBibToURL{#zbibSysID'
-                                    + params.itemData.id.toString()
-                                    +  '}{'
-                                    + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
-                                    + '}{'
-                                    + txt.substring(0,txtend)
-                                    + '}'
-                                    + txt.substring(txtend)
-                                    + aft
-                                    + postPunct;
+                                      + fore
+                                      + '\\ztHrefFromBibToURL{#zbibSysID'
+                                      + params.itemData.id.toString()
+                                      +  '}{'
+                                      + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
+                                      + '}{'
+                                      + txt.substring(0,txtend)
+                                      + '}'
+                                      + txt.substring(txtend)
+                                      + aft
+                                      + postPunct;
                             } else {
                                 return prePunct
-                                    + fore
-                                    + '\\ztHrefFromBibToURL{#zbibSysID'
-                                    + params.itemData.id.toString()
-                                    + '}{'
-                                    + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
-                                    + '}{'
-                                    + txt
-                                    + '}'
-                                    + aft
-                                    + postPunct;
+                                      + fore
+                                      + '\\ztHrefFromBibToURL{#zbibSysID'
+                                      + params.itemData.id.toString()
+                                      + '}{'
+                                      + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
+                                      + '}{'
+                                      + txt
+                                      + '}'
+                                      + aft
+                                      + postPunct;
                             }
                         } else {
                             return (prePunct + str + postPunct);
@@ -704,29 +726,29 @@ function monkeypatchIntegration () {
                                 txtend = m[0].length;
                             }
                             return prePunct
-                                + fore
-                                + '\\ztHrefFromCiteToBib{#zbibSysID'
-                                + params.itemData.id.toString()
-                                + '}{'
-                                + theURL
-                                + '}{'
-                                + txt.substring(0,txtend)
-                                + '}'
-                                + txt.substring(txtend)
-                                + aft
-                                + postPunct;
+                                  + fore
+                                  + '\\ztHrefFromCiteToBib{#zbibSysID'
+                                  + params.itemData.id.toString()
+                                  + '}{'
+                                  + theURL
+                                  + '}{'
+                                  + txt.substring(0,txtend)
+                                  + '}'
+                                  + txt.substring(txtend)
+                                  + aft
+                                  + postPunct;
                         } else {
                             return prePunct
-                                + fore
-                                + '\\ztHrefFromCiteToBib{#zbibSysID'
-                                + params.itemData.id.toString()
-                                + '}{'
-                                + theURL
-                                + '}{'
-                                + str
-                                + '}'
-                                + aft
-                                + postPunct;
+                                  + fore
+                                  + '\\ztHrefFromCiteToBib{#zbibSysID'
+                                  + params.itemData.id.toString()
+                                  + '}{'
+                                  + theURL
+                                  + '}{'
+                                  + str
+                                  + '}'
+                                  + aft
+                                  + postPunct;
                         }
                     }
                 }
@@ -828,20 +850,19 @@ function monkeypatchIntegration () {
 } // monkeyPatchIntegration
 
 
-
 function monkeyUnpatchIntegration() {
 
     Zotero.Integration.Session.prototype.setData.unpatch &&
-        Zotero.Integration.Session.prototype.setData.unpatch();
+          Zotero.Integration.Session.prototype.setData.unpatch();
 
     // Zotero.Integration.Session.prototype._updateCitations.unpatch &&
     //     Zotero.Integration.Session.prototype._updateCitations.unpatch();
 
     Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
-        Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
+          Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
 
     Zotero.Cite.System.prototype.setVariableWrapper.unpatch &&
-        Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
+          Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
 
     // Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
     //     Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
@@ -850,3 +871,103 @@ function monkeyUnpatchIntegration() {
     //     Zotero.Integration.Document.prototype.editCitation.unpatch();
 
 } // monkeyUnpatchIntegration
+
+
+function UiObserver() {
+    this.register();
+}
+
+UiObserver.prototype = {
+    observe: function(subject, topic, data) {
+        ifZotero(
+            function (Zotero) {
+                replaceProcessor(Zotero);
+                monkeyPatchIntegration(Zotero);
+            },
+            null
+        );
+    },
+    register: function() {
+        var observerService = Components.classes["@mozilla.org/observer-service;1"]
+            .getService(Components.interfaces.nsIObserverService);
+        observerService.addObserver(this, "final-ui-startup", false);
+    },
+    unregister: function() {
+        var observerService = Components.classes["@mozilla.org/observer-service;1"]
+            .getService(Components.interfaces.nsIObserverService);
+        observerService.removeObserver(this, "final-ui-startup");
+    }
+}
+var uiObserver = new UiObserver();
+
+
+/*
+ * Bootstrap functions
+ */
+
+// startup() can be called:
+//
+//  When the extension is first installed, assuming that it's both compatible
+//  with the application and is enabled.
+//
+//  When the extension becomes enabled using the add-ons manager window.
+//
+//  When the application is started up, if the extension is enabled and
+//  compatible with the application.
+//
+// Parameters
+//  data
+//      A bootstrap data structure.
+//  reason
+//      One of the reason constants, indicating why the extension is being
+//      started up. This will be one of APP_STARTUP, ADDON_disable,
+//      ADDON_INSTALL, ADDON_UPGRADE, or ADDON_DOWNGRADE.
+//
+function startup(data, reason) {
+    ifZotero(
+        function(Zotero) {
+            if (installFlag) {
+                replaceProcessor(Zotero);
+                monkeyPatchIntegration(Zotero);
+            }
+        },
+        function(Zotero) {
+            // If not, assume it will arrive by the end of UI startup
+            uiObserver.register();
+        }
+    );
+}
+
+// shutdown() can be called:
+//
+//  When the extension is uninstalled, if it's currently enabled.
+//
+//  When the extension becomes disabled.
+//
+//  When the user quits the application, if the extension is enabled.
+//
+function shutdown(data, reason) {
+    if (reason === APP_SHUTDOWN) {
+        return;
+    }
+    uiObserver.unregister();
+    ifZotero(
+            function(Zotero) {
+                monkeyUnpatchIntegration(Zotero);
+                Zotero.CiteProc.CSL = oldProcessor;
+                oldProcessor = false;
+            },
+        null
+    );
+}
+
+// Your bootstrap script must include an install() function, which the
+// application calls before the first call to startup() after the extension is
+// installed, upgraded, or downgraded.
+//
+function install(data, reason) {}
+
+// This function is called after the last call to shutdown() before a
+// particular version of an extension is uninstalled.
+//
+function uninstall(data, reason) {}
