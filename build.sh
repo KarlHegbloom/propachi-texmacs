@@ -52,7 +52,7 @@ function xx-read-version-from-processor-code () {
 }
 
 function xx-make-the-bundle () {
-    zip -r "${XPI_FILE}" chrome.manifest install.rdf bootstrap.js chrome/ update.rdf >> "${LOG_FILE}"
+    zip "${XPI_FILE}" chrome.manifest install.rdf bootstrap.js chrome/content/citeproc.js >> "${LOG_FILE}"
 }
 
 function build-the-plugin () {
