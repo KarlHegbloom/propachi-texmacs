@@ -4,11 +4,11 @@
     <em:id>propachi-texmacs@github.com</em:id>
     <em:type>2</em:type>
     <em:name>Propachi: monkey-patch for Zotero CSL processor and editor integration (with TeXmacs support)</em:name>
-    <em:version>1.1.178beta1</em:version>
+    <em:version>1.1.180beta3</em:version>
     <em:creator>Karl M. Hegbloom</em:creator>
     <em:contributor>Originally propachi-upper by Frank Bennett</em:contributor>
     <em:description>Replaces Zotero CSL processor and editor integration with alternative versions, with support for the TeXmacs editor.</em:description>
-    <em:updateURL>https://raw.githubusercontent.com/KarlHegbloom}/propachi-texmacs/propachi-texmacs-master/update.rdf</em:updateURL>
+    <em:updateURL>https://raw.githubusercontent.com/KarlHegbloom/propachi-texmacs/propachi-texmacs-master/update.rdf</em:updateURL>
     <em:unpack>true</em:unpack>
     <em:bootstrap>true</em:bootstrap>
     <em:targetApplication>
@@ -36,4 +36,3 @@
     </em:targetApplication>
   </Description>
 </RDF>
-
