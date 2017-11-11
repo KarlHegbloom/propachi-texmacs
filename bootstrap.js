@@ -1,68 +1,30 @@
 /* jshint undef: true, unused: true, curly: false, eqeqeq: true */
-/* globals Components: false, Services:false, CSL:false */
+/* globals Components:false, Services:false, CSL:false */
 /* exported Zotero */
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 var Zotero;
-
 var oldProcessor = false;
-var installFlag = false;
+var installFlag  = false;
 
 var prefOutputFormat; // "integration.outputFormat"
 var prefMaxMaxOffset; // "integration.maxmaxOffset"
 
 var styleReset = false;
 
-/*
- * Zotero runs citeproc-js synchronously within an async thread. We
- * can retrieve modules synchronously inside citeproc-js, and the
- * additional I/O will not impact the UI. Whew.
- */
-
-function ifZotero(succeed, fail) {
-    var ZoteroClass = Cc["@zotero.org/Zotero;1"];
-    if (ZoteroClass) {
-        Zotero = ZoteroClass
-            .getService(Ci.nsISupports)
-            .wrappedJSObject;
-        succeed ? succeed(Zotero) : null;
-    } else {
-        fail ? fail() : null;
-    }
-}
-
-function replaceProcessor (Zotero) {
-    oldProcessor = Zotero.CiteProc.CSL;
-    Cu.import("resource://gre/modules/Services.jsm");
-    Services.scriptloader.loadSubScript("chrome://propachi/content/citeproc.js", this, "UTF-8");
-    Zotero.CiteProc.CSL = CSL;
-}
-
-var installProcessor = function() {
-    if (! oldProcessor) {
-        Zotero = Cc['@zotero.org/Zotero;1']
-            .getService(Ci.nsISupports)
-            .wrappedJSObject;
-        oldProcessor = Zotero.CiteProc.CSL;
-        Cu.import('resource://gre/modules/Services.jsm');
-        Services.scriptloader.loadSubScript('chrome://propachi-texmacs/content/citeproc.js', this, 'UTF-8');
-        Zotero.CiteProc.CSL = CSL;
-    }
-}.bind(this);
-
 // function safeStringify(obj, replacer, spaces, cycleReplacer) {
 //     return JSON.stringify(obj, safeSerializer(replacer, cycleReplacer), spaces);
 // }
-
+//
 // function safeSerializer(replacer, cycleReplacer) {
 //     var stack = [], keys = [];
-
+//
 //     if (cycleReplacer === null)
 //         cycleReplacer = function(key, value) {
 //             if (stack[0] === value) { return '[Circular ~]'; }
 //             return '[Circular ~.' + keys.slice(0, stack.indexOf(value)).join('.') + ']';
 //         };
-
+//
 //     return function(key, value) {
 //         if (stack.length > 0) {
 //             var thisPos = stack.indexOf(this);
@@ -71,109 +33,109 @@ var installProcessor = function() {
 //             if (~stack.indexOf(value)) value = cycleReplacer.call(this, key, value);
 //         }
 //         else stack.push(value);
-
+//
 //         return replacer === null ? value : replacer.call(this, key, value);
 //     };
 // }
 
 
-function monkeyPatchIntegration() {
-    //
-    // From: https://www.npmjs.com/package/monkeypatch
-    //
-    //   npm install monkeypatch
-    //
-    var propachiNpmMonkeypatch = function(obj, method, handler, context) {
-        var original = obj[method];
+//
+// From: https://www.npmjs.com/package/monkeypatch
+//
+//   npm install monkeypatch
+//
+var propachiNpmMonkeypatch = function(obj, method, handler, context) {
+    var original = obj[method];
 
-        // Unpatch first if already patched.
-        if (original.unpatch) {
-            original = original.unpatch();
-        }
+    // Unpatch first if already patched.
+    if (original.unpatch) {
+        original = original.unpatch();
+    }
 
-        // Patch the function.
-        obj[method] = function() {
-            var ctx  = context || this;
-            var args = [].slice.call(arguments);
-            args.unshift(original.bind(ctx));
-            return handler.apply(ctx, args);
-        };
+    // Patch the function.
+    obj[method] = function() {
+        var ctx  = context || this;
+        var args = [].slice.call(arguments);
+        args.unshift(original.bind(ctx));
+        return handler.apply(ctx, args);
+    };
 
-        // Provide "unpatch" function.
-        obj[method].unpatch = function() {
-            obj[method] = original;
-            return original;
-        };
-
-        // Return the original.
+    // Provide "unpatch" function.
+    obj[method].unpatch = function() {
+        obj[method] = original;
         return original;
     };
 
-    //------------------------------------------------------------
-    //
-    // Examples:
-    //
-    // Patching a function
-    //
-    // Monkeypatch Date.now()
-    // propachi_npm_monkeypatch(Date, 'now', function(original) {
-    //   // Round to 15-minute interval.
-    //   var ts = original();
-    //   return ts - (ts % 900000);
-    // });
-    //
-    // var timestamp = Date.now(); // returns a rounded timestamp
-    //
-    //
-    // Patching an instance method
-    //
-    // Monkeypatch Date#getTime()
-    // monkeypatch(Date.prototype, 'getTime', function(original) {
-    //   // Round to 15-minute interval.
-    //   var ts = original();
-    //   return ts - (ts % 900000);
-    // });
-    //
-    // var date      = new Date();
-    // var timestamp = date.getTime(); // returns a rounded timestamp
-    //
-    //
-    // Argument handling
-    //
-    // Monkeypatch Date#setTime()
-    // monkeypatch(Date.prototype, 'setTime', function(original, ts) {
-    //   // Round to 15-minute interval.
-    //   ts = ts - (ts % 900000);
-    //   // Call the original.
-    //   return original(ts);
-    // });
-    //
-    // var date = new Date();
-    // date.setTime(date.getTime()); // set to a rounded timestamp
-    //
-    //
-    // Unpatching
-    // Monkeypatch Date.now()
-    // monkeypatch(Date, 'now', function() { return 143942400000; });
-    //
-    // console.log(Date.now()); // logs 143942400000
-    //
-    // Date.now.unpatch();
-    //
-    // console.log(Date.now()); // logs current time
-    //
-    //------------------------------------------------------------
+    // Return the original.
+    return original;
+};
 
+//------------------------------------------------------------
+//
+// Examples:
+//
+// Patching a function
+//
+// Monkeypatch Date.now()
+//
+// propachi_npm_monkeypatch(Date, 'now', function(original) {
+//   // Round to 15-minute interval.
+//   var ts = original();
+//   return ts - (ts % 900000);
+// });
+//
+// var timestamp = Date.now(); // returns a rounded timestamp
+//
+//
+// Patching an instance method
+//
+// Monkeypatch Date#getTime()
+//
+// monkeypatch(Date.prototype, 'getTime', function(original) {
+//   // Round to 15-minute interval.
+//   var ts = original();
+//   return ts - (ts % 900000);
+// });
+//
+// var date      = new Date();
+// var timestamp = date.getTime(); // returns a rounded timestamp
+//
+//
+// Argument handling
+//
+// Monkeypatch Date#setTime()
+//
+// monkeypatch(Date.prototype, 'setTime', function(original, ts) {
+//   // Round to 15-minute interval.
+//   ts = ts - (ts % 900000);
+//   // Call the original.
+//   return original(ts);
+// });
+//
+// var date = new Date();
+// date.setTime(date.getTime()); // set to a rounded timestamp
+//
+//
+// Unpatching
+//
+// Monkeypatch Date.now()
+//
+// monkeypatch(Date, 'now', function() { return 143942400000; });
+//
+// console.log(Date.now()); // logs 143942400000
+//
+// Date.now.unpatch();
+//
+// console.log(Date.now()); // logs current time
+//
+//------------------------------------------------------------
+
+
+function monkeyPatchIntegration() {
 
     //
     // Copied from integration.js to put them in scope here.
     //
-
-    // Commonly used imports accessible anywhere
-    Components.utils.import('resource://zotero/config.js');
-    Components.utils.import('resource://zotero/q.js');
-    Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
-    Components.utils.import('resource://gre/modules/Services.jsm');
 
     const RESELECT_KEY_URI      = 1;
     const RESELECT_KEY_ITEM_KEY = 2;
@@ -201,9 +163,24 @@ function monkeyPatchIntegration() {
     const NOTE_FOOTNOTE = 1;
     const NOTE_ENDNOTE  = 2;
 
+    // Update this pref
+    if (Zotero.Prefs.get("integration.outputFormat") === "bbl") {
+        Zotero.Prefs.set("integration.outputFormat", "tmzoterolatex");
+    }
+
+    propachiNpmMonkeypatch(Zotero.CiteProc.CSL.Engine.prototype, 'setOutputFormat', function(original, ignoredMode) {
+        var outputFormatMode = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
+        this.opt.mode = outputFormatMode;
+        this.fun.decorate = Zotero.CiteProc.CSL.Mode(outputFormatMode);
+        if (!this.output[outputFormatMode]) {
+            this.output[outputFormatMode] = {};
+            this.output[outputFormatMode].tmp = {};
+        }
+    });
 
     /**
      * Copied and modified from:
+     *
      *   Zotero.Integration.Document.prototype.addEditCitation
      *
      * Affirms the citation at the cursor position.
@@ -363,34 +340,41 @@ function monkeyPatchIntegration() {
     // initiation of the integration command in play, just as the DocumentData
     // etc. is now.
     //
-    propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
-        // data is a Zotero.Integration.DocumentData
-        // this.style here is a citeproc...
-        var oldStyle = (this.data && this.data.style ? this.data.style : false);
-        var ret = original(data, resetStyle); // performs: this.data = data;, ensures that this.style exists, etc.
-        var outputFormat, newStyle, originalStyle;
-        // Same conditions by which original() determines whether to reset the style, using same information.
-        if(data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
-            // After it's done, we re-set the style. It really is this.style, not this.data.style here.
-            // It's also certain at this point that this.style exists and is a Zotero.Citeproc.CSL.Engine.
-            // Above the call to original(...) above, it might not have. It may have been reset, or not.
-            outputFormat = Zotero.Prefs.get('integration.outputFormat') || 'tmzoterolatex';
-            this.style.setOutputFormat(outputFormat);
-            // pro-actively monkeypatch it for good measure.
-            originalStyle = this.style;
-            if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
-                newStyle = Object.create(this.style);
-                newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                    var outputFormat = Zotero.Prefs.get('integration.outputFormat') || 'tmzoterolatex';
-                    originalStyle.setOutputFormat(outputFormat);
-                };
-                newStyle.setOutputFormat_is_propachi_monkeypatched = true;
-                this.style = newStyle;
-            }
-            styleReset = true; // for variableWrapper, below.
-        }
-        return ret;
-    } ) );
+    // To make this quicker for me to get running, instead of calling original,
+    // which is a Zotero.Promise.coroutine and I don't know enough about
+    // that... I'll just copy the entire routine from integration.js and modify
+    // it here.
+    //
+    // propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
+    //     var oldStyle = (this.data && this.data.style ? this.data.style : false);
+    //     this.data = data;
+    //     if (data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
+    //         this.styleID = data.style.styleID;
+    //         try {
+    //     	yield Zotero.Styles.init();
+    //     	var getStyle = Zotero.Styles.get(data.style.styleID);
+    //     	data.style.hasBibliography = getStyle.hasBibliography;
+    //             this.style = getStyle.getCiteProc(data.style.locale, data.prefs.automaticJournalAbbreviations);
+    //     	this.style.setOutputFormat("tmzoterolatex");
+    //     	this.styleClass = getStyle.class;
+    //     	this.dateModified = new Object();
+    //     	this.style.setLangTagsForCslTransliteration(data.prefs.citationTransliteration);
+    //     	this.style.setLangTagsForCslTranslation(data.prefs.citationTranslation);
+    //     	this.style.setLangTagsForCslSort(data.prefs.citationSort);
+    //     	this.style.setLangPrefsForCites(data.prefs, function(key){return 'citationLangPrefs'+key});
+    //     	this.style.setLangPrefsForCiteAffixes(data.prefs.citationAffixes);
+    //         } catch (e) {
+    //     	Zotero.logError(e);
+    //     	throw new Zotero.Exception.Alert("integration.error.invalidStyle");
+    //         }
+
+    //         return true;
+
+    //     } else if (oldStyle) {
+    //         data.style = oldStyle;
+    //     }
+    //     return false;
+    // } ) );
 
 
     // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, '_updateCitations', function(original) {
@@ -451,20 +435,20 @@ function monkeyPatchIntegration() {
     // the text inside, and it's easy enough to convert from that format to any
     // other?
     //
-    propachiNpmMonkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
-        var ret, newStyle;
-        var originalStyle = this.session.style;
-        if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
-            newStyle = Object.create(this.session.style);
-            newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-                var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
-                originalStyle.setOutputFormat(outputFormat);
-            };
-            newStyle.setOutputFormat_is_propachi_monkeypatched = true;
-            this.session.style = newStyle;
-        }
-        return original(); // calls on setOutputFormat internally.
-    });
+    // propachiNpmMonkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
+    //     var ret, newStyle;
+    //     var originalStyle = this.session.style;
+    //     if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
+    //         newStyle = Object.create(originalStyle);
+    //         newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
+    //             var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
+    //             originalStyle.setOutputFormat(outputFormat);
+    //         };
+    //         newStyle.setOutputFormat_is_propachi_monkeypatched = true;
+    //         this.session.style = newStyle;
+    //     }
+    //     return original(); // calls on setOutputFormat internally.
+    // });
 
 
     ////
@@ -852,14 +836,17 @@ function monkeyPatchIntegration() {
 
 function monkeyUnpatchIntegration() {
 
-    Zotero.Integration.Session.prototype.setData.unpatch &&
-          Zotero.Integration.Session.prototype.setData.unpatch();
+    Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch &&
+        Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch();
+
+    // Zotero.Integration.Session.prototype.setData.unpatch &&
+    //       Zotero.Integration.Session.prototype.setData.unpatch();
 
     // Zotero.Integration.Session.prototype._updateCitations.unpatch &&
     //     Zotero.Integration.Session.prototype._updateCitations.unpatch();
 
-    Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
-          Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
+    // Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
+    //     Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
 
     Zotero.Cite.System.prototype.setVariableWrapper.unpatch &&
           Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
@@ -873,19 +860,20 @@ function monkeyUnpatchIntegration() {
 } // monkeyUnpatchIntegration
 
 
-function UiObserver() {
-    this.register();
-}
+var installProcessor = function() {
+    Zotero = Cc['@zotero.org/Zotero;1']
+        .getService(Ci.nsISupports)
+        .wrappedJSObject;
+    oldProcessor = Zotero.CiteProc.CSL;
+    Cu.import('resource://gre/modules/Services.jsm');
+    Services.scriptloader.loadSubScript('chrome://propachi-texmacs/content/citeproc.js', this, 'UTF-8');
+    Zotero.CiteProc.CSL = CSL;
+}.bind(this);
 
-UiObserver.prototype = {
+var uiObserver = {
     observe: function(subject, topic, data) {
-        ifZotero(
-            function (Zotero) {
-                replaceProcessor(Zotero);
-                monkeyPatchIntegration(Zotero);
-            },
-            null
-        );
+        installProcessor();
+        monkeyPatchIntegration();
     },
     register: function() {
         var observerService = Components.classes["@mozilla.org/observer-service;1"]
@@ -898,8 +886,6 @@ UiObserver.prototype = {
         observerService.removeObserver(this, "final-ui-startup");
     }
 }
-var uiObserver = new UiObserver();
-
 
 /*
  * Bootstrap functions
@@ -923,19 +909,13 @@ var uiObserver = new UiObserver();
 //      started up. This will be one of APP_STARTUP, ADDON_disable,
 //      ADDON_INSTALL, ADDON_UPGRADE, or ADDON_DOWNGRADE.
 //
-function startup(data, reason) {
-    ifZotero(
-        function(Zotero) {
-            if (installFlag) {
-                replaceProcessor(Zotero);
-                monkeyPatchIntegration(Zotero);
-            }
-        },
-        function(Zotero) {
-            // If not, assume it will arrive by the end of UI startup
-            uiObserver.register();
-        }
-    );
+function startup (data, reason) {
+    if (installFlag) {
+        installProcessor();
+        monkeyPatchIntegration();
+    } else {
+        uiObserver.register();
+    }
 }
 
 // shutdown() can be called:
@@ -946,28 +926,30 @@ function startup(data, reason) {
 //
 //  When the user quits the application, if the extension is enabled.
 //
-function shutdown(data, reason) {
+function shutdown (data, reason) {
     if (reason === APP_SHUTDOWN) {
         return;
     }
-    uiObserver.unregister();
-    ifZotero(
-            function(Zotero) {
-                monkeyUnpatchIntegration(Zotero);
-                Zotero.CiteProc.CSL = oldProcessor;
-                oldProcessor = false;
-            },
-        null
-    );
+    if (installFlag) {
+        monkeyUnpatchIntegration();
+        Zotero.CiteProc.CSL = oldProcessor;
+        installFlag = false;
+    } else {
+        uiObserver.unregister();
+        monkeyUnpatchIntegration();
+        Zotero.CiteProc.CSL = oldProcessor;
+    }
 }
 
 // Your bootstrap script must include an install() function, which the
 // application calls before the first call to startup() after the extension is
 // installed, upgraded, or downgraded.
 //
-function install(data, reason) {}
+function install (data, reason) {
+    installFlag = true;
+}
 
 // This function is called after the last call to shutdown() before a
 // particular version of an extension is uninstalled.
 //
-function uninstall(data, reason) {}
+function uninstall (data, reason) {}
