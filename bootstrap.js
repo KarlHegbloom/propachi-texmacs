@@ -211,581 +211,426 @@ function monkeyPatchIntegration() {
      *   Zotero.Integration.Fields.prototype.addEditCitation
      */
     Zotero.Integration.Fields.prototype.affirmCitation =
-          Zotero.Promise.coroutine(function* (field) {
-              var newField, citation, /* fieldIndex, */ code, session = this._session;
+        Zotero.Promise.coroutine(function* (field) {
+            var newField, citation, /* fieldIndex, */ code, session = this._session;
 
-              // if there's already a citation, make sure we have item IDs in addition to keys
-              if (field) {
-                  try {
-                      code = field.getCode();
-                  } catch(e) {}
+            // if there's already a citation, make sure we have item IDs in addition to keys
+            if (field) {
+                try {
+                    code = field.getCode();
+                } catch(e) {}
 
-                  if(code) {
-                      var [type, content] = this.getCodeTypeAndContent(code);
-                      if(type !== INTEGRATION_TYPE_ITEM) {
-                          throw new Zotero.Exception.Alert("integration.error.notInCitation");
-                      }
-
-                      try {
-                          citation = session.unserializeCitation(content);
-                      } catch(e) {}
-
-                      if(citation) {
-                          try {
-                              yield session.lookupItems(citation);
-                          } catch(e) {
-                              if(e instanceof Zotero.Integration.MissingItemException) {
-                                  citation.citationItems = [];
-                              } else {
-                                  throw e;
-                              }
-                          }
-
-                          if(citation.properties.dontUpdate ||
-                             (citation.properties.plainCitation &&
-                              field.getText() !== citation.properties.plainCitation)) {
-                              this._doc.activate();
-                              Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n" +
-                                           "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n" +
-                                           "Original: " + citation.properties.plainCitation + "\n" +
-                                           "Current:  " + field.getText());
-                              if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
-                                                         DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
-                                  throw new Zotero.Exception.UserCancelled("editing citation");
-                              }
-                          }
-
-                          // make sure it's going to get updated
-                          delete citation.properties.formattedCitation;
-                          delete citation.properties.plainCitation;
-                          delete citation.properties.dontUpdate;
-                      }
-                  }
-              } else {
-                  // For affirmCitation it makes no sense for there to *not* be
-                  // a citation, where in addEditCitation it does make sense.
-                  // newField = true;
-                  // field = this.addField(true);
-                  throw new Zotero.Exception.Alert("integration.error.notInCitation");
-              }
-
-              var me = this;
-              return Zotero.Promise.resolve(field).then(function (field) {
-                  if(!citation) {
-                      field.setCode("TEMP");
-                      citation = {"citationItems":[], "properties":{}};
-                  }
-
-                  var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
-
-                  // affirmCitation does not need to present the dialog like addEditCitation did:
-                  //
-                  // if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
-                  //     Zotero.Integration.displayDialog(me._doc,
-                  //     'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
-                  //     io);
-                  // } else {
-                  //     var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
-                  //         ? 'popup' : 'alwaysRaised')+',resizable=false';
-                  //     Zotero.Integration.displayDialog(me._doc,
-                  //     'chrome://zotero/content/integration/quickFormat.xul', mode, io);
-                  // }
-                  //
-
-                  io.accept(function (pct) {
-                      // do-nothing progress callback for affirmCitation...
-                  });
-
-                  if(newField) {
-                      return io.promise.catch(function (e) {
-                          // Try to delete new field on failure
-                          try {
-                              field.delete();
-                          } catch (e) {}
-                          throw e;
-                      });
-                  } else {
-                      return io.promise;
-                  }
-              });
-          });
-
-    //
-    // Instead of having to monkey patch the setOutputFormat thing like this, I
-    // think we should make the out-of-the-box one support the
-    // integration.outputFormat pref setting, making the argument optional, and
-    // then make integration.js respect the setting of that pref setting, to
-    // make it outputFormat agnostic.
-    //
-    // Another thing that can help with that would be to make it so that there
-    // can be separate functions run at certain points within integration.js
-    // that are outputFormat dependant, to eliminate the need for long if then
-    // switches and having to edit or monkeypatch integration.js to add support
-    // for a new outputFormat.
-    //
-    // With an outputFormat agnostic integration.js, support for other editors
-    // becomes possible, as demonstrated by this zotero-texmacs-integration. An
-    // HTML or Markdown editor could just as easily utilize Juris-M / Zotero if
-    // is possible to set the outputFormat and then use the same integration
-    // wire protocol.
-    //
-    // In case somebody wants to edit a document in OpenOffice, and at the same
-    // time, edit one in TeXmacs, that outputFormat will need to be associated
-    // with each DocumentData... or editor integration plugin requested
-    // outputFormat, and thus each Session... It should not be necessary to
-    // edit the integration.js to plug in a new editor and outputFormat.
-    //
-    // Obviously a settings interface to changing the outputFormat isn’t what
-    // this calls for. That setting must be a property set up during the
-    // initiation of the integration command in play, just as the DocumentData
-    // etc. is now.
-    //
-    // To make this quicker for me to get running, instead of calling original,
-    // which is a Zotero.Promise.coroutine and I don't know enough about
-    // that... I'll just copy the entire routine from integration.js and modify
-    // it here.
-    //
-    // propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function *(original, data, resetStyle) {
-    //     var oldStyle = (this.data && this.data.style ? this.data.style : false);
-    //     this.data = data;
-    //     if (data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
-    //         this.styleID = data.style.styleID;
-    //         try {
-    //     	yield Zotero.Styles.init();
-    //     	var getStyle = Zotero.Styles.get(data.style.styleID);
-    //     	data.style.hasBibliography = getStyle.hasBibliography;
-    //             this.style = getStyle.getCiteProc(data.style.locale, data.prefs.automaticJournalAbbreviations);
-    //     	this.style.setOutputFormat("tmzoterolatex");
-    //     	this.styleClass = getStyle.class;
-    //     	this.dateModified = new Object();
-    //     	this.style.setLangTagsForCslTransliteration(data.prefs.citationTransliteration);
-    //     	this.style.setLangTagsForCslTranslation(data.prefs.citationTranslation);
-    //     	this.style.setLangTagsForCslSort(data.prefs.citationSort);
-    //     	this.style.setLangPrefsForCites(data.prefs, function(key){return 'citationLangPrefs'+key});
-    //     	this.style.setLangPrefsForCiteAffixes(data.prefs.citationAffixes);
-    //         } catch (e) {
-    //     	Zotero.logError(e);
-    //     	throw new Zotero.Exception.Alert("integration.error.invalidStyle");
-    //         }
-
-    //         return true;
-
-    //     } else if (oldStyle) {
-    //         data.style = oldStyle;
-    //     }
-    //     return false;
-    // } ) );
-
-
-    // propachi_npm_monkeypatch(Zotero.Integration.Session.prototype, '_updateCitations', function(original) {
-    //     var XRegExp = Zotero.Utilities.XRegExp;
-    //     for each(var indexList in [this.newIndices, this.updateIndices]) {
-    //         for(var index in indexList) {
-    //                     var indexstr = index;
-    //             index = parseInt(index);
-    //             var citation = this.citationsByIndex[index];
-    //                     console.log("_updateCitations:index:" + indexstr + ":citation before:" + safe_stringify(citation, null, 2));
-    //                     var field, formattedCitation;
-    //                     if (citation.properties && citation.properties.field) {
-    //                         field = JSON.parse(citation.properties.field);
-    //                         console.log("_updateCitations:got field:" + safe_stringify(field, null, 2) + "\n");
-    //                     }
-    //                     if (citation.properties && citation.properties.formattedCitation) {
-    //                         formattedCitation = citation.properties.formattedCitation;
-    //                     }
-    //                     else if (field && field.properties && field.properties.formattedCitation) {
-    //                         formattedCitation = field.properties.formattedCitation;
-    //                     }
-    //                     if (formattedCitation) {
-    //                         console.log("_updateCitations:formattedCitation before XRegExp.replaceEach:\n" + formattedCitation + "\n");
-    //                         formattedCitation = XRegExp.replaceEach(formattedCitation, [
-    //                             [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)', 'g'), ''],
-    //                             [XRegExp('((.*?)\\2X-X-X)', 'g'), ''],   // 'repeatrepeatX-X-X' ==> ''
-    //                             [XRegExp('(X-X-X[  ]?)', 'g'), ''],
-    //                             [XRegExp('([  ]?\\([  ]*\\))', 'g'), ''], // empty paren and space before ==> ''
-    //                             [XRegExp('(.*000000000@#(.ztbib[A-Za-z]+.*})}.*\\.?}%?)', 'gm'), "$2"]
-    //                         ]);
-    //                         console.log("_updateCitations:formattedCitation after XRegExp.replaceEach:\n" + formattedCitation + "\n");
-    //                         if (field && field.properties) {
-    //                             field.properties.formattedCitation = formattedCitation;
-    //                             citation.properties.field = JSON.stringify(field, null, 0);
-    //                         }
-    //                         if (citation.properties && citation.properties.formattedCitation) {
-    //                             citation.properties.formattedCitation = formattedCitation;
-    //                         }
-    //                     }
-    //                     console.log("_updateCitations:index:" + indexstr + ":citation after:" + safe_stringify(citation, null, 2));
-    //         }
-    //     }
-    //     return original();
-    // });
-
-
-    ////
-    //
-    // The ultimate would be to have a TeXmacs widget there to display
-    // these... But eventually I will also want them in HTML, at the same time,
-    // so that the if-html thing will work right. I want the HTML that is
-    // output by translating a TeXmacs document into an =.html= file to be CSS
-    // and XPATH compatible with the standard Juris-M / Zotero / citeproc-js
-    // HTML output.
-    //
-    // If a generalized format would be useful, perhaps an xml would work well
-    // for it? <i> for italics, <b> for bold, <sc> for small-caps, etc. around
-    // the text inside, and it's easy enough to convert from that format to any
-    // other?
-    //
-    // propachiNpmMonkeypatch(Zotero.Integration.Session.BibliographyEditInterface.prototype, '_update', function(original) {
-    //     var ret, newStyle;
-    //     var originalStyle = this.session.style;
-    //     if (! originalStyle.setOutputFormat_is_propachi_monkeypatched) {
-    //         newStyle = Object.create(originalStyle);
-    //         newStyle.setOutputFormat = function(ignored_was_outputFormat_hard_coded) {
-    //             var outputFormat = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
-    //             originalStyle.setOutputFormat(outputFormat);
-    //         };
-    //         newStyle.setOutputFormat_is_propachi_monkeypatched = true;
-    //         this.session.style = newStyle;
-    //     }
-    //     return original(); // calls on setOutputFormat internally.
-    // });
-
-
-    ////
-    //
-    // setVariablewrapper is called from within:
-    //
-    //   ../../zotero/chrome/content/zotero/xpcom/style.js:Zotero.Style.prototype.getCiteProc
-    //
-    // ... which returns a Zotero.CiteProc.CSL.Engine
-    //
-    // It is called as sys.setVariableWrapper, where sys is a Zotero.Cite.System, defined within the definition of
-    // Zotero.Cite.System.prototype, found at:
-    //
-    //   ../../zotero/chrome/content/zotero/xpcom/cite.js:Zotero.Cite.System.prototype
-    //
-    // The sys object is created in Zotero.Style.prototype.getCiteProc, which hands that sys object to
-    // new Zotero.CiteProc.CSL.Engine()
-    //
-    propachiNpmMonkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
-
-        // console.log("setVariableWrapper called.\n");
-
-        var last_itemID = "";
-        var first_variableName = "";
-        var do_not_run_wrapper = false;
-
-        Zotero.Cite.System.prototype._variableWrapperCleanString = function(str, mode) {
-            var XRegExp = Zotero.Utilities.XRegExp;
-            // console.log("_variableWrapperCleanString:str before:\n'" + str + "'\n");
-            str = XRegExp.replaceEach(str, [
-                [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)',  'g'), ''], // Sort categorizer prefixes
-                [XRegExp('((.*?)\\2X-X-X)',               'g'), ''], // 'repeatrepeatX-X-X' ==> ''
-                [XRegExp('(X-X-X[  ]?)',                  'g'), ''], // X-X-X and maybe a space after ==> ''
-                [XRegExp('([  ]?\\([  ]*\\))',            'g'), ''], // empty paren and space before ==> ''
-                [XRegExp('(.*000000000@#)',               'g'), ''], // Sort prefix for category heading ==> ''
-                [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<div class=\"$2\">$3</div>"]
-            ]);
-
-            // console.log("_variableWrapperCleanString:str after first replaceEach:\n'" + str + "'\n");
-
-            if (mode && mode === 'tmzoterolatex') {
-                // console.log("_variableWrapperCleanString:mode: tmzoterolatex");
-                str = XRegExp.replaceEach(str, [
-                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
-                ]);
-            }
-            else if (mode && mode === 'html') {
-                // console.log("_variableWrapperCleanString:mode: html");
-                str = XRegExp.replaceEach(str, [
-                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "<div class=\"$2\">$3</div>"]
-                ]);
-            }
-            else {
-                // console.log("_variableWrapperCleanString:mode: UNKNOWN");
-                str = XRegExp.replaceEach(str, [
-                    [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "$3"]
-                ]);
-            }
-
-            // console.log("_variableWrapperCleanString:str after:\n'" + str + "'\n");
-
-            return str;
-        };
-
-
-        this.variableWrapper = function(params, prePunct, str, postPunct) {
-
-
-            if (params.mode === "tmzoterolatex") {
-
-                // console.log("variableWrapper:params:\n#+BEGIN_EXAMPLE json\n" + JSON.stringify(params) + "\n#+END_EXAMPLE json\n");
-
-                var thisItemID = params.context + "_" + params.itemData.id.toString();
-
-                // console.log("variableWrapper:last_itemID:" + last_itemID);
-                // console.log("variableWrapper:this_itemID:" + this_itemID);
-                // console.log("variableWrapper:first_variableName:" + first_variableName);
-                // console.log("variableWrapper:variableNames[0]:" + params.variableNames[0]);
-
-                // When I addCitation, and then the next operation is anything but an addCitation or editCitation for the
-                // same citation itemData.id, then:
-                //
-                //   this_itemID !== last_itemID
-                //
-                // ... However, when I addCitation, and then immediately after that call editCitation on the same one, or
-                // addCitation and add one with the same citation itemData.id as the last time this function was called,
-                // then:
-                //
-                //   this_itemID === last_itemID
-                //
-                // ... but really I want the wrapper to be called when it's the first_variableName; that is, when it's the
-                // start of a new citation or bibliography entry being formatted, whether it be a new citation containing as
-                // it's first item the same itemData.id as the last one this function has seen, or an immediate editCitation
-                // of one that was just added.
-                //
-                // This part of the program does not know in advance what CSL style is in use, thus it can not know in
-                // advance which variable from the itemData will be formatted first.
-                //
-                // If the CSL style is changed, the first_variableName may be different than it was before, even if this
-                // addCitation or editCitation is not for the same itemData.id as the last one. I assume that the style
-                // won't get reset in the middle of outputing a citation or bibliography entry.
-                //
-                if (styleReset) {
-                    lastItemID = "";
-                    styleReset = false;
-                }
-
-                if (thisItemID !== lastItemID) {
-                    firstVariableName = params.variableNames[0];
-                    doNotRunWrapper = false;
-                }
-                else if (thisItemID === lastItemID &&
-                         firstVariableName === params.variableNames[0]) {
-                    doNotRunWrapper = false;
-                }
-                else if (thisItemID === lastItemID &&
-                         firstVariableName !== params.variableNames[0]) {
-                    doNotRunWrapper = true;
-                }
-
-                // This will only run most of this function's code for the first variable in a citation or bibliography
-                // entry (e.g., the title or the author) so that the first 4 characters of the first word, no matter what
-                // CSL format was chosen by the user, will become a hyperlink. Obviously we don't want every variable field
-                // in a citation or bibliography entry to have a hyperlink; only the first.
-                //
-                if (do_not_run_wrapper) {
-                    return (prePunct + str + postPunct);
-                } else {
-                    // Experimentally clean strings:
-                    str = this._variableWrapperCleanString(str, params.mode);
-                    //
-                    // The parsing below is necessary so that the right part gets wrapped with the URL. It has to find the
-                    // text-only part, and wrap the first 4 characters of that. I don't want it to wrap LaTeX macros, for
-                    // example. For some reason, some of them come through, as when a font shape or styling has been applied
-                    // to it. The other strings we need to skip are the 00#@ and 000000000@# hacks.
-                    //
-                    // console.log("variableWrapper:str:\n----\n" + str + "\n----\n");
-                    //
-                    // Sample str values from real documents:
-                    //
-                    // W.W. Thornton
-                    // V
-                    // {\itshape{}Coram Nobis Et Coram Vobis}
-                    // {\scshape{}Wikipedia}
-                    // {\scshape{}Ind. L.J.}
-                    // 02#@UtahUtahX-X-X
-                    //
-                    // \ztHref{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}
-
-                    var fore, txt, aft;
-
-                    // I created this str_parse regexp by using the Firefox addon called "Regular Expression Tester", by
-                    // Sebo. I could not have done this without it.
-                    //
-                    var str_parse = new Zotero.Utilities.XRegExp(/^((?:[0-9][-0-9a-zA-Z.@#]+(?:#@|@#)|\{?\\[a-z][a-zA-Z0-9}{]+(?:\{}?))+)*([^\}]+)(\}?.*)$/);
-
-                    // check for typographic ligature and be sure to include all of the characters it's comprised of within
-                    // the display text of the link so that they are rendered properly in TeXmacs.
-                    //
-                    var ligrx = new Zotero.Utilities.XRegExp(/^(...?ff[il]|...f[fil])/);
-
-                    var m = Zotero.Utilities.XRegExp.exec(str, str_parse);
-                    if (m != null) {
-                        // console.log("variableWrapper:m != null");
-                        // console.log("variableWrapper:m:" + safe_stringify(m, null, 2));
-                        // console.log("variableWrapper:m[0]:" + m[0]);
-                        fore = (m[1] ? m[1] : '');
-                        txt  = (m[2] ? m[2] : '');
-                        aft  = (m[3] ? m[3] : '');
-                    } else {
-                        // console.log("variableWrapper:m === null");
-                        fore = '';
-                        txt  = str;
-                        aft  = '';
+                if(code) {
+                    var [type, content] = this.getCodeTypeAndContent(code);
+                    if(type !== INTEGRATION_TYPE_ITEM) {
+                        throw new Zotero.Exception.Alert("integration.error.notInCitation");
                     }
-                    // console.log("variableWrapper:fore:" + fore);
-                    // console.log("variableWrapper:txt:"  + txt);
-                    // console.log("variableWrapper:aft:"  + aft + "\n");
 
-                    var URL = null;
-                    var DOI = params.itemData.DOI;
-                    if (DOI) {
-                        URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI);
-                    }
-                    if (!URL) {
-                        URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
-                    }
-                    last_itemID = this_itemID;
-                    // any first field for this_itemID When
-                    // this splits between characters of a
-                    // ligature, it breaks the ligature and
-                    // makes too wide a space there. It needs
-                    // to look for that, and just include both
-                    // letters of the ligature into the link
-                    // text. e.g., "Griffin"
-                    // ff fi fl ffi ffl
-                    if (params.context === "bibliography") {
-                        if (URL) {
-                            if (txt.length > 4) {
-                                var txtend = 4;
-                                m = Zotero.Utilities.XRegExp.exec(txt, ligrx);
-                                if (m != null) {
-                                    txtend = m[0].length;
-                                }
-                                return prePunct
-                                      + fore
-                                      + '\\ztHrefFromBibToURL{#zbibSysID'
-                                      + params.itemData.id.toString()
-                                      +  '}{'
-                                      + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
-                                      + '}{'
-                                      + txt.substring(0,txtend)
-                                      + '}'
-                                      + txt.substring(txtend)
-                                      + aft
-                                      + postPunct;
+                    try {
+                        citation = session.unserializeCitation(content);
+                    } catch(e) {}
+
+                    if(citation) {
+                        try {
+                            yield session.lookupItems(citation);
+                        } catch(e) {
+                            if(e instanceof Zotero.Integration.MissingItemException) {
+                                citation.citationItems = [];
                             } else {
-                                return prePunct
-                                      + fore
-                                      + '\\ztHrefFromBibToURL{#zbibSysID'
-                                      + params.itemData.id.toString()
-                                      + '}{'
-                                      + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
-                                      + '}{'
-                                      + txt
-                                      + '}'
-                                      + aft
-                                      + postPunct;
+                                throw e;
                             }
-                        } else {
-                            return (prePunct + str + postPunct);
                         }
-                        // any first field for an id
-                    } else if (params.context === 'citation') {
-                        var theURL;
-                        if (URL) {
-                            // client Guile code and style package macros can use this to create a
-                            // hyperlink to the on-line URL when there's no bibliography in the
-                            // document. When there is one, then the ztHrefFromCiteToBib macro's
-                            // first argument will link to a label loci inside the bibliography.
-                            //
-                            // There, in the bibliography, each item can have a link to this same
-                            // URL; using the first four characters of the item's text as the
-                            // display text.
-                            //
-                            theURL = '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}';
-                        } else {
-                            theURL = '\\path{\\ztDefaultCiteURL}';
+
+                        if(citation.properties.dontUpdate ||
+                           (citation.properties.plainCitation &&
+                            field.getText() !== citation.properties.plainCitation)) {
+                            this._doc.activate();
+                            Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n" +
+                                         "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n" +
+                                         "Original: " + citation.properties.plainCitation + "\n" +
+                                         "Current:  " + field.getText());
+                            if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
+                                                       DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
+                                throw new Zotero.Exception.UserCancelled("editing citation");
+                            }
                         }
+
+                        // make sure it's going to get updated
+                        delete citation.properties.formattedCitation;
+                        delete citation.properties.plainCitation;
+                        delete citation.properties.dontUpdate;
+                    }
+                }
+            } else {
+                // For affirmCitation it makes no sense for there to *not* be
+                // a citation, where in addEditCitation it does make sense.
+                // newField = true;
+                // field = this.addField(true);
+                throw new Zotero.Exception.Alert("integration.error.notInCitation");
+            }
+
+            var me = this;
+            return Zotero.Promise.resolve(field).then(function (field) {
+                if(!citation) {
+                    field.setCode("TEMP");
+                    citation = {"citationItems":[], "properties":{}};
+                }
+
+                var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
+
+                // affirmCitation does not need to present the dialog like addEditCitation did:
+                //
+                // if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
+                //     Zotero.Integration.displayDialog(me._doc,
+                //     'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
+                //     io);
+                // } else {
+                //     var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
+                //         ? 'popup' : 'alwaysRaised')+',resizable=false';
+                //     Zotero.Integration.displayDialog(me._doc,
+                //     'chrome://zotero/content/integration/quickFormat.xul', mode, io);
+                // }
+                //
+
+                io.accept(function (pct) {
+                    // do-nothing progress callback for affirmCitation...
+                });
+
+                if(newField) {
+                    return io.promise.catch(function (e) {
+                        // Try to delete new field on failure
+                        try {
+                            field.delete();
+                        } catch (e) {}
+                        throw e;
+                    });
+                } else {
+                    return io.promise;
+                }
+            });
+        });
+
+
+
+    var last_itemID = "";
+    var first_variableName = "";
+    var do_not_run_wrapper = false;
+
+    Zotero.Cite.System.prototype._variableWrapperCleanString = function(str, mode) {
+        var XRegExp = Zotero.Utilities.XRegExp;
+        // console.log("_variableWrapperCleanString:str before:\n'" + str + "'\n");
+        str = XRegExp.replaceEach(str, [
+            [XRegExp('((?:[0-9][0-9A-Za-z.-]*#@)+)',  'g'), ''], // Sort categorizer prefixes
+            [XRegExp('((.*?)\\2X-X-X)',               'g'), ''], // 'repeatrepeatX-X-X' ==> ''
+            [XRegExp('(X-X-X[  ]?)',                  'g'), ''], // X-X-X and maybe a space after ==> ''
+            [XRegExp('([  ]?\\([  ]*\\))',            'g'), ''], // empty paren and space before ==> ''
+            [XRegExp('(.*000000000@#)',               'g'), ''], // Sort prefix for category heading ==> ''
+            // [XRegExp('(.(ztbib[A-Za-z]+)\\{!?(.*)})', 'gm'), "<div class=\"$2\">$3</div>"]
+        ]);
+
+        // console.log("_variableWrapperCleanString:str after first replaceEach:\n'" + str + "'\n");
+
+        if (mode && mode === 'tmzoterolatex') {
+            // console.log("_variableWrapperCleanString:mode: tmzoterolatex");
+            str = XRegExp.replaceEach(str, [
+                [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), '\\' + "$2{$3}"]
+            ]);
+        }
+        else if (mode && mode === 'html') {
+            // console.log("_variableWrapperCleanString:mode: html");
+            str = XRegExp.replaceEach(str, [
+                [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "<div class=\"$2\">$3</div>"]
+            ]);
+        }
+        else {
+            // console.log("_variableWrapperCleanString:mode: UNKNOWN");
+            str = XRegExp.replaceEach(str, [
+                [XRegExp('(<(ztbib[A-Za-z]+)>(.*)</\\2>)', 'gm'), "$3"]
+            ]);
+        }
+
+        // console.log("_variableWrapperCleanString:str after:\n'" + str + "'\n");
+
+        return str;
+    }; // function Zotero.Cite.System.prototype._variableWrapperCleanString()
+
+
+    Zotero.Cite.System.prototype.variableWrapper = function(params, prePunct, str, postPunct) {
+
+        // console.log("variableWrapper() called... params.mode is " + params.mode);
+
+        if (params.mode === "tmzoterolatex") {
+
+            // console.log("variableWrapper:params:\n#+BEGIN_EXAMPLE json\n" + JSON.stringify(params) + "\n#+END_EXAMPLE json\n");
+
+            var this_itemID = params.context + "_" + params.itemData.id.toString();
+
+            // console.log("variableWrapper:last_itemID:" + last_itemID);
+            // console.log("variableWrapper:this_itemID:" + this_itemID);
+            // console.log("variableWrapper:first_variableName:" + first_variableName);
+            // console.log("variableWrapper:variableNames[0]:" + params.variableNames[0]);
+
+            // When I addCitation, and then the next operation is anything but an addCitation or editCitation for the
+            // same citation itemData.id, then:
+            //
+            //   this_itemID !== last_itemID
+            //
+            // ... However, when I addCitation, and then immediately after that call editCitation on the same one, or
+            // addCitation and add one with the same citation itemData.id as the last time this function was called,
+            // then:
+            //
+            //   this_itemID === last_itemID
+            //
+            // ... but really I want the wrapper to be called when it's the first_variableName; that is, when it's the
+            // start of a new citation or bibliography entry being formatted, whether it be a new citation containing as
+            // it's first item the same itemData.id as the last one this function has seen, or an immediate editCitation
+            // of one that was just added.
+            //
+            // This part of the program does not know in advance what CSL style is in use, thus it can not know in
+            // advance which variable from the itemData will be formatted first.
+            //
+            // If the CSL style is changed, the first_variableName may be different than it was before, even if this
+            // addCitation or editCitation is not for the same itemData.id as the last one. I assume that the style
+            // won't get reset in the middle of outputing a citation or bibliography entry.
+            //
+            if (styleReset) {
+                last_itemID = "";
+                styleReset = false;
+            }
+
+            if (this_itemID !== last_itemID) {
+                first_variableName = params.variableNames[0];
+                do_not_run_wrapper = false;
+            }
+            else if (this_itemID === last_itemID &&
+                     first_variableName === params.variableNames[0]) {
+                do_not_run_wrapper = false;
+            }
+            else if (this_itemID === last_itemID &&
+                     first_variableName !== params.variableNames[0]) {
+                do_not_run_wrapper = true;
+            }
+
+            // This will only run most of this function's code for the first variable in a citation or bibliography
+            // entry (e.g., the title or the author) so that the first 4 characters of the first word, no matter what
+            // CSL format was chosen by the user, will become a hyperlink. Obviously we don't want every variable field
+            // in a citation or bibliography entry to have a hyperlink; only the first.
+            //
+            if (do_not_run_wrapper) {
+                return (prePunct + str + postPunct);
+            } else {
+                // Experimentally clean strings:
+                str = this._variableWrapperCleanString(str, params.mode);
+                //
+                // The parsing below is necessary so that the right part gets wrapped with the URL. It has to find the
+                // text-only part, and wrap the first 4 characters of that. I don't want it to wrap LaTeX macros, for
+                // example. For some reason, some of them come through, as when a font shape or styling has been applied
+                // to it. The other strings we need to skip are the 00#@ and 000000000@# hacks.
+                //
+                // console.log("variableWrapper:str:\n----\n" + str + "\n----\n");
+                //
+                // Sample str values from real documents:
+                //
+                // W.W. Thornton
+                // V
+                // {\itshape{}Coram Nobis Et Coram Vobis}
+                // {\scshape{}Wikipedia}
+                // {\scshape{}Ind. L.J.}
+                // 02#@UtahUtahX-X-X
+                //
+                // \ztHref{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}{http://en.wikipedia.org/w/index.php?title=Maxims\_of\_equity\&oldid=532918962}
+
+                var fore, txt, aft;
+
+                // I created this str_parse regexp by using the Firefox addon called "Regular Expression Tester", by
+                // Sebo. I could not have done this without it.
+                //
+                var str_parse = new Zotero.Utilities.XRegExp(/^((?:[0-9][-0-9a-zA-Z.@#]+(?:#@|@#)|\{?\\[a-z][a-zA-Z0-9}{]+(?:\{}?))+)*([^\}]+)(\}?.*)$/);
+
+                // check for typographic ligature and be sure to include all of the characters it's comprised of within
+                // the display text of the link so that they are rendered properly in TeXmacs.
+                //
+                var ligrx = new Zotero.Utilities.XRegExp(/^(...?ff[il]|...f[fil])/);
+
+                var m = Zotero.Utilities.XRegExp.exec(str, str_parse);
+                if (m != null) {
+                    // console.log("variableWrapper:m != null");
+                    // console.log("variableWrapper:m:" + safe_stringify(m, null, 2));
+                    // console.log("variableWrapper:m[0]:" + m[0]);
+                    fore = (m[1] ? m[1] : '');
+                    txt  = (m[2] ? m[2] : '');
+                    aft  = (m[3] ? m[3] : '');
+                } else {
+                    // console.log("variableWrapper:m === null");
+                    fore = '';
+                    txt  = str;
+                    aft  = '';
+                }
+                // console.log("variableWrapper:fore:" + fore);
+                // console.log("variableWrapper:txt:"  + txt);
+                // console.log("variableWrapper:aft:"  + aft + "\n");
+
+                var URL = null;
+                var DOI = params.itemData.DOI;
+                if (DOI) {
+                    URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI);
+                }
+                if (!URL) {
+                    URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
+                }
+                last_itemID = this_itemID;
+                // any first field for this_itemID When
+                // this splits between characters of a
+                // ligature, it breaks the ligature and
+                // makes too wide a space there. It needs
+                // to look for that, and just include both
+                // letters of the ligature into the link
+                // text. e.g., "Griffin"
+                // ff fi fl ffi ffl
+                if (params.context === "bibliography") {
+                    if (URL) {
                         if (txt.length > 4) {
-                            // Notice that the zbibSysID contains the item system id as assigned
-                            // by Juris-M / Zotero. So these have enough information to program-
-                            // atically form the zotero: URL that finds the citation.  This tag
-                            // can look up the tree to find the citation cluster that it's in, and
-                            // thus the zotero: URL's; perhaps in that cluster's field code data.
                             var txtend = 4;
                             m = Zotero.Utilities.XRegExp.exec(txt, ligrx);
                             if (m != null) {
                                 txtend = m[0].length;
                             }
                             return prePunct
-                                  + fore
-                                  + '\\ztHrefFromCiteToBib{#zbibSysID'
-                                  + params.itemData.id.toString()
-                                  + '}{'
-                                  + theURL
-                                  + '}{'
-                                  + txt.substring(0,txtend)
-                                  + '}'
-                                  + txt.substring(txtend)
-                                  + aft
-                                  + postPunct;
+                                + fore
+                                + '\\ztHrefFromBibToURL{#zbibSysID'
+                                + params.itemData.id.toString()
+                                +  '}{'
+                                + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
+                                + '}{'
+                                + txt.substring(0,txtend)
+                                + '}'
+                                + txt.substring(txtend)
+                                + aft
+                                + postPunct;
                         } else {
                             return prePunct
-                                  + fore
-                                  + '\\ztHrefFromCiteToBib{#zbibSysID'
-                                  + params.itemData.id.toString()
-                                  + '}{'
-                                  + theURL
-                                  + '}{'
-                                  + str
-                                  + '}'
-                                  + aft
-                                  + postPunct;
+                                + fore
+                                + '\\ztHrefFromBibToURL{#zbibSysID'
+                                + params.itemData.id.toString()
+                                + '}{'
+                                + '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}'
+                                + '}{'
+                                + txt
+                                + '}'
+                                + aft
+                                + postPunct;
                         }
+                    } else {
+                        return (prePunct + str + postPunct);
                     }
-                }
-            }
-            else if (Zotero.Prefs.get('linkTitles')) {
-                //
-                // params.mode !== 'tmzoterolatex' &&
-                // Zotero.Prefs.get('linkTitles') => true
-                //                //
-                // The following code was initially pasted directly from:
-                //
-                //    ../../zotero/chrome/content/zotero/xpcom/cite.js:Zotero.Cite.System.prototype.setVariableWrapper
-                //
-                //   Handles params.modes === 'html' || 'rtf'
-                //
-
-                if (params.variableNames[0] === 'title'
-                    && (params.itemData.URL || params.itemData.URL_REAL || params.itemData.DOI)
-                    && params.context === "bibliography") {
-
-                    // console.log("linkTitles, title, bibliography, with URL or DOI present.");
-
-                    var URL = null;
-                    var DOI = params.itemData.DOI;
-                    if (DOI) {
-                        URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI)
-                    }
-                    if (!URL) {
-                        URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
-                    }
+                    // any first field for an id
+                } else if (params.context === 'citation') {
+                    var theURL;
                     if (URL) {
-
-                        str = this._variableWrapperCleanString(str, params.mode);
-
-                        if (params.mode === 'rtf') {
-                            return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
-                        } else if (params.mode === 'html') {
-                            return prePunct + '<a href="' + URL + '">' + str + '</a>' + postPunct;
+                        // client Guile code and style package macros can use this to create a
+                        // hyperlink to the on-line URL when there's no bibliography in the
+                        // document. When there is one, then the ztHrefFromCiteToBib macro's
+                        // first argument will link to a label loci inside the bibliography.
+                        //
+                        // There, in the bibliography, each item can have a link to this same
+                        // URL; using the first four characters of the item's text as the
+                        // display text.
+                        //
+                        theURL = '\\path{' + URL.replace(/([$_^{%&])/g, "\\$1") + '}';
+                    } else {
+                        theURL = '\\path{\\ztDefaultCiteURL}';
+                    }
+                    if (txt.length > 4) {
+                        // Notice that the zbibSysID contains the item system id as assigned
+                        // by Juris-M / Zotero. So these have enough information to program-
+                        // atically form the zotero: URL that finds the citation.  This tag
+                        // can look up the tree to find the citation cluster that it's in, and
+                        // thus the zotero: URL's; perhaps in that cluster's field code data.
+                        var txtend = 4;
+                        m = Zotero.Utilities.XRegExp.exec(txt, ligrx);
+                        if (m != null) {
+                            txtend = m[0].length;
                         }
-                        // org-mode or markdown ?
-                        else {
-                            return (prePunct + str + postPunct);
-                        }
+                        return prePunct
+                            + fore
+                            + '\\ztHrefFromCiteToBib{#zbibSysID'
+                            + params.itemData.id.toString()
+                            + '}{'
+                            + theURL
+                            + '}{'
+                            + txt.substring(0,txtend)
+                            + '}'
+                            + txt.substring(txtend)
+                            + aft
+                            + postPunct;
+                    } else {
+                        return prePunct
+                            + fore
+                            + '\\ztHrefFromCiteToBib{#zbibSysID'
+                            + params.itemData.id.toString()
+                            + '}{'
+                            + theURL
+                            + '}{'
+                            + str
+                            + '}'
+                            + aft
+                            + postPunct;
                     }
                 }
             }
-            // Fall-through default:
-            str = this._variableWrapperCleanString(str, params.mode);
-            return (prePunct + str + postPunct);
         }
-    });
+        else if (Zotero.Prefs.get('linkTitles')) {
+            //
+            // params.mode !== 'tmzoterolatex' &&
+            // Zotero.Prefs.get('linkTitles') => true
+            //                //
+            // The following code was initially pasted directly from:
+            //
+            //    ../../zotero/chrome/content/zotero/xpcom/cite.js:Zotero.Cite.System.prototype.setVariableWrapper
+            //
+            //   Handles params.modes === 'html' || 'rtf'
+            //
+
+            if (params.variableNames[0] === 'title'
+                && (params.itemData.URL || params.itemData.URL_REAL || params.itemData.DOI)
+                && params.context === "bibliography") {
+
+                // console.log("linkTitles, title, bibliography, with URL or DOI present.");
+
+                var URL = null;
+                var DOI = params.itemData.DOI;
+                if (DOI) {
+                    URL = 'https://doi.org/' + Zotero.Utilities.cleanDOI(DOI)
+                }
+                if (!URL) {
+                    URL = params.itemData.URL ? params.itemData.URL : params.itemData.URL_REAL;
+                }
+                if (URL) {
+
+                    str = this._variableWrapperCleanString(str, params.mode);
+
+                    if (params.mode === 'rtf') {
+                        return prePunct + '{\\field{\\*\\fldinst HYPERLINK "' + URL + '"}{\\fldrslt ' + str + '}}' + postPunct;
+                    } else if (params.mode === 'html') {
+                        return prePunct + '<a href="' + URL + '">' + str + '</a>' + postPunct;
+                    }
+                    // org-mode or markdown ?
+                    else {
+                        return (prePunct + str + postPunct);
+                    }
+                }
+            }
+        }
+        // Fall-through default:
+        str = this._variableWrapperCleanString(str, params.mode);
+        return (prePunct + str + postPunct);
+    }; // function Zotero.Cite.System.prototype.variableWrapper()
+
 
     //-------------------------------------------------
+    //
+    // TODO: Maybe this can be used to create the ztbibItemRefsList ?
+
     //
     // Test for this.item_id to add decorations to
     // bibliography output of individual entries.
@@ -811,53 +656,37 @@ function monkeyPatchIntegration() {
     //
     // propachi_npm_monkeypatch(Zotero.Cite.System.prototype, 'embedBibliographyEntry', function(original, item_id, state) {
     //     // state.registry.registry[item_id].ref is
-
+    //
     //     if (state) {
-
+    //
     //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state:\n"
     //                     + safe_stringify(state, null, 2) + "\n\n");
-
+    //
     //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry:\n"
     //                     + safe_stringify(state.registry, null, 2) + "\n\n");
-
+    //
     //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry:\n"
     //                     + safe_stringify(state.registry.registry, null, 2) + "\n\n");
-
+    //
     //         console.log("Zotero.Cite.System.prototype.embedBibliographyEntry:state.registry.registry[item_id]:\n"
     //                     + safe_stringify(state.registry.registry[item_id], null, 2) + "\n\n");
     //     }
-
+    //
     //     return "STUBTeXLabel1,STUBTeXLabel2,STUBTeXLabel3";
     // });
 
-
-} // monkeyPatchIntegration
+}; // function monkeyPatchIntegration()
 
 
 function monkeyUnpatchIntegration() {
 
-    Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch &&
+    Zotero.CiteProc.CSL &&
+        Zotero.CiteProc.CSL.prototype &&
+        Zotero.CiteProc.CSL.prototype.setOutputFormat &&
+        Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch &&
         Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch();
 
-    // Zotero.Integration.Session.prototype.setData.unpatch &&
-    //       Zotero.Integration.Session.prototype.setData.unpatch();
-
-    // Zotero.Integration.Session.prototype._updateCitations.unpatch &&
-    //     Zotero.Integration.Session.prototype._updateCitations.unpatch();
-
-    // Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch &&
-    //     Zotero.Integration.Session.BibliographyEditInterface.prototype._update.unpatch();
-
-    Zotero.Cite.System.prototype.setVariableWrapper.unpatch &&
-          Zotero.Cite.System.prototype.setVariableWrapper.unpatch();
-
-    // Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch &&
-    //     Zotero.Cite.System.prototype.embedBibliographyEntry.unpatch();
-
-    // Zotero.Integration.Document.prototype.editCitation.unpatch &&
-    //     Zotero.Integration.Document.prototype.editCitation.unpatch();
-
-} // monkeyUnpatchIntegration
+}; // monkeyUnpatchIntegration
 
 
 var installProcessor = function() {
@@ -885,7 +714,7 @@ var uiObserver = {
             .getService(Components.interfaces.nsIObserverService);
         observerService.removeObserver(this, "final-ui-startup");
     }
-}
+};
 
 /*
  * Bootstrap functions
@@ -916,7 +745,7 @@ function startup (data, reason) {
     } else {
         uiObserver.register();
     }
-}
+};
 
 // shutdown() can be called:
 //
@@ -939,7 +768,7 @@ function shutdown (data, reason) {
         monkeyUnpatchIntegration();
         Zotero.CiteProc.CSL = oldProcessor;
     }
-}
+};
 
 // Your bootstrap script must include an install() function, which the
 // application calls before the first call to startup() after the extension is
@@ -947,9 +776,9 @@ function shutdown (data, reason) {
 //
 function install (data, reason) {
     installFlag = true;
-}
+};
 
 // This function is called after the last call to shutdown() before a
 // particular version of an extension is uninstalled.
 //
-function uninstall (data, reason) {}
+function uninstall (data, reason) {};
