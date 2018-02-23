@@ -131,6 +131,8 @@ var propachiNpmMonkeypatch = function(obj, method, handler, context) {
 //------------------------------------------------------------
 
 
+var propachiUnpatch = [];
+
 function monkeyPatchIntegration() {
 
     //
@@ -177,6 +179,7 @@ function monkeyPatchIntegration() {
             this.output[outputFormatMode].tmp = {};
         }
     });
+    propachiUnpatch.push(Zotero.CiteProc.CSL.Engine.prototype.setOutputFormat.unpatch);
 
     /**
      * Copied and modified from:
@@ -193,123 +196,125 @@ function monkeyPatchIntegration() {
      *
      * @return {Promise}
      */
-    Zotero.Integration.Document.prototype.affirmCitation = function() {
-        // console.log("Zotero.Integration.Document.prototype.affirmCitation() called.");
-        var me = this;
-        return this._getSession(true, false).then(function () {
-            var field = me._doc.cursorInField(me._session.data.prefs['fieldType']);
-            if(!field) {
-                throw new Zotero.Exception.Alert("integration.error.notInCitation", [],
-                                                 "integration.error.title");
-            }
-            return (new Zotero.Integration.Fields(me._session, me._doc)).affirmCitation(field);
-        });
-    };
+    Zotero.Integration.Interface.prototype.affirmCitation = Zotero.Promise.coroutine(function* () {
+        // console.log("Zotero.Integration.Interface.prototype.affirmCitation()
+        // called.");
+        yield this._session.init(false, false);
+        var docField = this._doc.cursorInField(this._session.data.prefs['fieldType']);
+        if(!docField) {
+            throw new Zotero.Exception.Alert("integration.error.notInCitation", [],
+                                             "integration.error.title");
+        }
+        let [idx, field, citation] = yield this._session.fields.affirmCitation(docField);
+        yield this._session.addCitation(idx, field.getNoteIndex(), citation);
+        if (this._session.data.prefs.delayCitationUpdates) {
+            return this._session.writeDelayedCitation(idx, field, citation);
+        } else {
+            return this._session.fields.updateDocument(FORCE_CITATIONS_FALSE, false, false);
+        }
+    });
 
     /*
      * Copied and modified from:
      *   Zotero.Integration.Fields.prototype.addEditCitation
      */
-    Zotero.Integration.Fields.prototype.affirmCitation =
-        Zotero.Promise.coroutine(function* (field) {
-            var newField, citation, /* fieldIndex, */ code, session = this._session;
+    Zotero.Integration.Fields.prototype.affirmCitation = Zotero.Promise.coroutine(function* (field) {
+	      var newField;
 
-            // if there's already a citation, make sure we have item IDs in addition to keys
-            if (field) {
-                try {
-                    code = field.getCode();
-                } catch(e) {}
+	      if (field) {
+		        field = Zotero.Integration.Field.loadExisting(field);
 
-                if(code) {
-                    var [type, content] = this.getCodeTypeAndContent(code);
-                    if(type !== INTEGRATION_TYPE_ITEM) {
-                        throw new Zotero.Exception.Alert("integration.error.notInCitation");
-                    }
+		        if (field.type != INTEGRATION_TYPE_ITEM) {
+			          throw new Zotero.Exception.Alert("integration.error.notInCitation");
+		        }
+	      } else {
+		        newField = true;
+		        field = new Zotero.Integration.CitationField(yield this.addField(true));
+		        field.clearCode();
+	      }
 
-                    try {
-                        citation = session.unserializeCitation(content);
-                    } catch(e) {}
+	      var citation = new Zotero.Integration.Citation(field);
+	      yield citation.prepareForEditing();
 
-                    if(citation) {
-                        try {
-                            yield session.lookupItems(citation);
-                        } catch(e) {
-                            if(e instanceof Zotero.Integration.MissingItemException) {
-                                citation.citationItems = [];
-                            } else {
-                                throw e;
-                            }
-                        }
+	      // -------------------
+	      // Preparing stuff to pass into CitationEditInterface
+	      var fieldIndexPromise = this.get().then(function(fields) {
+		        for (var i=0, n=fields.length; i<n; i++) {
+			          if (fields[i].equals(field._field)) {
+				            // This is needed, because LibreOffice integration plugin caches the field code instead of asking
+				            // the document every time when calling #getCode().
+				            field._field = fields[i];
+				            return i;
+			          }
+		        }
+            return 0;
+	      });
 
-                        if(citation.properties.dontUpdate ||
-                           (citation.properties.plainCitation &&
-                            field.getText() !== citation.properties.plainCitation)) {
-                            this._doc.activate();
-                            Zotero.debug("[addEditCitation] Attempting to update manually modified citation.\n" +
-                                         "citation.properties.dontUpdate: " + citation.properties.dontUpdate + "\n" +
-                                         "Original: " + citation.properties.plainCitation + "\n" +
-                                         "Current:  " + field.getText());
-                            if(!this._doc.displayAlert(Zotero.getString("integration.citationChanged.edit"),
-                                                       DIALOG_ICON_WARNING, DIALOG_BUTTONS_OK_CANCEL)) {
-                                throw new Zotero.Exception.UserCancelled("editing citation");
-                            }
-                        }
+	      var citationsByItemIDPromise;
+	      if (this._session.data.prefs.delayCitationUpdates) {
+		        citationsByItemIDPromise = Zotero.Promise.resolve(this._session.citationsByItemID);
+	      } else {
+		        citationsByItemIDPromise = fieldIndexPromise.then(function() {
+			          return this.updateSession(FORCE_CITATIONS_FALSE);
+		        }.bind(this)).then(function() {
+			          return this._session.citationsByItemID;
+		        }.bind(this));
+	      }
 
-                        // make sure it's going to get updated
-                        delete citation.properties.formattedCitation;
-                        delete citation.properties.plainCitation;
-                        delete citation.properties.dontUpdate;
-                    }
-                }
-            } else {
-                // For affirmCitation it makes no sense for there to *not* be
-                // a citation, where in addEditCitation it does make sense.
-                // newField = true;
-                // field = this.addField(true);
-                throw new Zotero.Exception.Alert("integration.error.notInCitation");
-            }
+        var previewFn = Zotero.Promise.coroutine(function* (citation) {
+            let idx = yield fieldIndexPromise;
+            yield citationsByItemIDPromise;
 
-            var me = this;
-            return Zotero.Promise.resolve(field).then(function (field) {
-                if(!citation) {
-                    field.setCode("TEMP");
-                    citation = {"citationItems":[], "properties":{}};
-                }
+		        var [citations, fieldToCitationIdxMapping, citationToFieldIdxMapping] = this._session.getCiteprocLists();
+		        let citationsPre = citations.slice(0, fieldToCitationIdxMapping[idx]);
+		        let citationsPost = citations.slice(fieldToCitationIdxMapping[idx]+1);
+		        try {
+			          return this._session.style.previewCitationCluster(citation, citationsPre, citationsPost, "rtf");
+		        } catch(e) {
+			          throw e;
+		        }
+	      }.bind(this));
 
-                var io = new Zotero.Integration.CitationEditInterface(citation, field, me, session);
+	      var io = new Zotero.Integration.CitationEditInterface(
+		        citation, this._session.style.opt.sort_citations,
+		        fieldIndexPromise, citationsByItemIDPromise, previewFn, this._session.style
+	      );
 
-                // affirmCitation does not need to present the dialog like addEditCitation did:
-                //
-                // if(Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
-                //     Zotero.Integration.displayDialog(me._doc,
-                //     'chrome://zotero/content/integration/addCitationDialog.xul', 'alwaysRaised,resizable',
-                //     io);
-                // } else {
-                //     var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
-                //         ? 'popup' : 'alwaysRaised')+',resizable=false';
-                //     Zotero.Integration.displayDialog(me._doc,
-                //     'chrome://zotero/content/integration/quickFormat.xul', mode, io);
-                // }
-                //
+	      // Zotero.debug('Integration: Displaying citation dialogue');
+	      // if (Zotero.Prefs.get("integration.useClassicAddCitationDialog")) {
+		    //     Zotero.Integration.displayDialog('chrome://zotero/content/integration/addCitationDialog.xul',
+			  //                                      'alwaysRaised,resizable', io);
+	      // } else {
+		    //     var mode = (!Zotero.isMac && Zotero.Prefs.get('integration.keepAddCitationDialogRaised')
+			  //                 ? 'popup' : 'alwaysRaised')+',resizable=false';
+		    //     Zotero.Integration.displayDialog('chrome://zotero/content/integration/quickFormat.xul',
+			  //                                      mode, io);
+	      // }
 
-                io.accept(function (pct) {
-                    // do-nothing progress callback for affirmCitation...
-                });
-
-                if(newField) {
-                    return io.promise.catch(function (e) {
-                        // Try to delete new field on failure
-                        try {
-                            field.delete();
-                        } catch (e) {}
-                        throw e;
-                    });
-                } else {
-                    return io.promise;
-                }
-            });
+        io.accept(function (pct) {
+           // do nothing 
         });
 
+	      // -------------------
+	      // io.promise resolves when the citation dialog is closed
+	      this.progressCallback = yield io.promise;
+
+	      if (!io.citation.citationItems.length) {
+		        // Try to delete new field on cancel
+		        if (newField) {
+			          try {
+				            yield field.delete();
+			          } catch(e) {}
+		        }
+		        throw new Zotero.Exception.UserCancelled("inserting citation");
+	      }
+
+	      var fieldIndex = yield fieldIndexPromise;
+	      this._session.updateIndices[fieldIndex] = true;
+	      // Make sure session is updated
+	      yield citationsByItemIDPromise;
+	      return [fieldIndex, field, io.citation];
+    });
 
 
     var last_itemID = "";
@@ -353,6 +358,12 @@ function monkeyPatchIntegration() {
 
         return str;
     }; // function Zotero.Cite.System.prototype._variableWrapperCleanString()
+
+
+    propachiNpmMonkeypatch(Zotero.Cite.System.prototype, 'setVariableWrapper', function(original, setValue) {
+       // do nothing
+    });
+    propachiUnpatch.push(Zotero.Cite.System.prototype.setVariableWrapper.unpatch);
 
 
     Zotero.Cite.System.prototype.variableWrapper = function(params, prePunct, str, postPunct) {
@@ -679,13 +690,9 @@ function monkeyPatchIntegration() {
 
 
 function monkeyUnpatchIntegration() {
-
-    Zotero.CiteProc.CSL &&
-        Zotero.CiteProc.CSL.prototype &&
-        Zotero.CiteProc.CSL.prototype.setOutputFormat &&
-        Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch &&
-        Zotero.CiteProc.CSL.prototype.setOutputFormat.unpatch();
-
+    for(let unpatch in propachiUnpatch) {
+        unpatch();
+    }
 }; // monkeyUnpatchIntegration
 
 
