@@ -7,8 +7,8 @@ var Zotero;
 var oldProcessor = false;
 var installFlag  = false;
 
-var prefOutputFormat; // "integration.outputFormat"
-var prefMaxMaxOffset; // "integration.maxmaxOffset"
+var prefDefaultOutputFormat; // "integration.defaultOutputFormat"
+var prefMaxMaxOffset;        // "integration.maxmaxOffset"
 
 var styleReset = false;
 
@@ -166,20 +166,46 @@ function monkeyPatchIntegration() {
     const NOTE_ENDNOTE  = 2;
 
     // Update this pref
-    if (Zotero.Prefs.get("integration.outputFormat") === "bbl") {
-        Zotero.Prefs.set("integration.outputFormat", "tmzoterolatex");
+    if (Zotero.Prefs.get("integration.outputFormat")) {
+        Zotero.Prefs.set("integration.defaultOutputFormat", Zotero.prefs.get("integration.outputFormat"));
+        Zotero.Prefs.clear("integration.outputFormat");
+    }
+    if (! Zotero.Prefs.get("integration.defaultOutputFormat")) {
+        Zotero.Prefs.set("integration.defaultOutputFormat", "rtf");
     }
 
     propachiNpmMonkeypatch(Zotero.CiteProc.CSL.Engine.prototype, 'setOutputFormat', function(original, ignoredMode) {
-        var outputFormatMode = Zotero.Prefs.get("integration.outputFormat") || "tmzoterolatex";
-        this.opt.mode = outputFormatMode;
-        this.fun.decorate = Zotero.CiteProc.CSL.Mode(outputFormatMode);
-        if (!this.output[outputFormatMode]) {
-            this.output[outputFormatMode] = {};
-            this.output[outputFormatMode].tmp = {};
+        var mode, session = Zotero.Integration.currentSession;
+        if (session.data.prefs["outputFormat"]) {
+            mode = session.data.prefs["outputFormat"];
+        } else {
+            mode = Zotero.Prefs.get("integration.defaultOutputFormat") || "rtf";
         }
+        original(mode);
     });
     propachiUnpatch.push(Zotero.CiteProc.CSL.Engine.prototype.setOutputFormat.unpatch);
+
+    // propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function*(original, data, resetStyle) {
+    //     // this.style undefined?
+    //     var ret = original(data, resetStyle);
+    //     if (data.prefs["outputFormat"] !== undefined) {
+    //         this.style.setOutputFormat(data.prefs["outputFormat"]);
+    //     } else {
+    //         this.style.setOutputFormat( Zotero.Prefs.get("integration.outputFormat") || 'rtf');
+    //     }
+    //     return ret;
+    // }));
+    // propachiUnpatch.push(Zotero.Integration.Session.prototype.setData.unpatch);
+
+    // propachiNpmMonkeypatch(Zotero.Integration.Bibliography.prototype, 'getCiteprocBibliography', function(original, citeproc) {
+    //     if (Zotero.Integration.currentSession.data.prefs["outputFormat"] !== undefined) {
+    //         citeproc.setOutputFormat( Zotero.Integration.currentSession.data.prefs["outputFormat"] );
+    //     } else {
+    //         citeproc.setOutputFormat( Zotero.Prefs.get("integration.outputFormat") || 'rtf');
+    //     }
+    //     return original(citeproc);
+    // });
+    // propachiUnpatch.push(Zotero.Integration.Bibliography.prototype.getCiteprocBibliography.unpatch);
 
     /**
      * Copied and modified from:
@@ -690,8 +716,8 @@ function monkeyPatchIntegration() {
 
 
 function monkeyUnpatchIntegration() {
-    for(let unpatch in propachiUnpatch) {
-        unpatch();
+    for(let f of propachiUnpatch) {
+        f.call();
     }
 }; // monkeyUnpatchIntegration
 
