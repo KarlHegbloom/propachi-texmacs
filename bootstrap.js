@@ -166,10 +166,7 @@ function monkeyPatchIntegration() {
     const NOTE_ENDNOTE  = 2;
 
     // Update this pref
-    if (Zotero.Prefs.get("integration.outputFormat")) {
-        Zotero.Prefs.set("integration.defaultOutputFormat", Zotero.prefs.get("integration.outputFormat"));
-        Zotero.Prefs.clear("integration.outputFormat");
-    }
+    Zotero.Prefs.clear("integration.outputFormat");
     if (! Zotero.Prefs.get("integration.defaultOutputFormat")) {
         Zotero.Prefs.set("integration.defaultOutputFormat", "rtf");
     }
