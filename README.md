@@ -4,9 +4,9 @@ This is a **_necessary_** component of the [`zotero-texmacs-integration`](https:
 
 __Notice: I have not yet tested all of this with Zotero 5.0, since I use Juris-M 5.0 myself. Testing it in plain Zotero 5.0 is a todo item at this point. It won't hurt anything to try it, so if you feel like and and have success (or failure) please feel free to report that to me via the GitHub "issues" tracker. Thanks.__
 
-It is an add-on for __Juris-M__ (and hopefully Zotero) that modifies Juris-M's (or Zotero's) LibreOffice integration to make it't output format compatible with TeXmacs.
+It is an add-on for __Juris-M__ (and hopefully Zotero) that modifies Juris-M's (or Zotero's) LibreOffice integration to make it's output format compatible with TeXmacs.
 
-This add-on is compatible with both my TeXmacs plugin as well as with the OpenOffice and Word plugins. This add-on no longer needs to be disabled or uninstalled in order for those other editor plugins to function as intended.
+**This add-on is compatible with both my TeXmacs plugin as well as with the OpenOffice and Word plugins. This add-on no longer needs to be disabled or uninstalled in order for those other editor plugins to function as intended.**
 
 This add-on is primarily a *monkey patch* to the [Juris-M](https://juris-m.github.io) (or [Zotero](https://www.zotero.org)) reference manager, which runs as a standalone XUL application (based on the [Firefox](https://www.mozilla.org/en-US/firefox/products/) web browser). It replaces the `citeproc-js` inside of Juris-M / Zotero with one that has certain options enabled, and also has been extended with a new `outputFormat`, called “`tmzoterolatex`”.
 
