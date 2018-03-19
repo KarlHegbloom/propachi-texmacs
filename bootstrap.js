@@ -171,38 +171,83 @@ function monkeyPatchIntegration() {
         Zotero.Prefs.set("integration.defaultOutputFormat", "rtf");
     }
 
-    propachiNpmMonkeypatch(Zotero.CiteProc.CSL.Engine.prototype, 'setOutputFormat', function(original, ignoredMode) {
-        var mode, session = Zotero.Integration.currentSession;
-        if (session.data.prefs["outputFormat"]) {
-            mode = session.data.prefs["outputFormat"];
-        } else {
-            mode = Zotero.Prefs.get("integration.defaultOutputFormat") || "rtf";
-        }
-        original(mode);
-    });
-    propachiUnpatch.push(Zotero.CiteProc.CSL.Engine.prototype.setOutputFormat.unpatch);
-
-    // propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function*(original, data, resetStyle) {
-    //     // this.style undefined?
-    //     var ret = original(data, resetStyle);
-    //     if (data.prefs["outputFormat"] !== undefined) {
-    //         this.style.setOutputFormat(data.prefs["outputFormat"]);
+    // propachiNpmMonkeypatch(Zotero.CiteProc.CSL.Engine.prototype, 'setOutputFormat', function(original, ignoredMode) {
+    //     var mode, session = Zotero.Integration.currentSession; // FAILS
+    //     if (session.data.prefs["outputFormat"]) { // session is undefined.
+    //         mode = session.data.prefs["outputFormat"];
     //     } else {
-    //         this.style.setOutputFormat( Zotero.Prefs.get("integration.outputFormat") || 'rtf');
+    //         mode = Zotero.Prefs.get("integration.defaultOutputFormat") || "rtf";
     //     }
-    //     return ret;
-    // }));
-    // propachiUnpatch.push(Zotero.Integration.Session.prototype.setData.unpatch);
-
-    // propachiNpmMonkeypatch(Zotero.Integration.Bibliography.prototype, 'getCiteprocBibliography', function(original, citeproc) {
-    //     if (Zotero.Integration.currentSession.data.prefs["outputFormat"] !== undefined) {
-    //         citeproc.setOutputFormat( Zotero.Integration.currentSession.data.prefs["outputFormat"] );
-    //     } else {
-    //         citeproc.setOutputFormat( Zotero.Prefs.get("integration.outputFormat") || 'rtf');
-    //     }
-    //     return original(citeproc);
+    //     original(mode);
     // });
-    // propachiUnpatch.push(Zotero.Integration.Bibliography.prototype.getCiteprocBibliography.unpatch);
+    // propachiUnpatch.push(Zotero.CiteProc.CSL.Engine.prototype.setOutputFormat.unpatch);
+
+    propachiNpmMonkeypatch(Zotero.Integration.Session.prototype, 'setData', Zotero.Promise.coroutine(function*(original, data, resetStyle) {
+        var oldStyle = (this.data && this.data.style ? this.data.style : false);
+	      this.data = data;
+	      this.data.sessionID = this.sessionID;
+	      if (data.style.styleID && (!oldStyle || oldStyle.styleID != data.style.styleID || resetStyle)) {
+		        // We're changing the citeproc instance, so we'll have to reinsert all citations into the registry
+		        this.reload = true;
+		        this.styleID = data.style.styleID;
+		        try {
+			          yield Zotero.Styles.init();
+			          var getStyle = Zotero.Styles.get(data.style.styleID);
+			          data.style.hasBibliography = getStyle.hasBibliography;
+			          this.style = getStyle.getCiteProc(data.style.locale, data.prefs.automaticJournalAbbreviations);
+                if (data.prefs.outputFormat === undefined) {
+                    Zotero.debug("Session.prototype.setData, data.prefs.outputFormat is undefined!")
+                }
+                var outputFormat = data.prefs.outputFormat || 'rtf';
+                Zotero.debug("Session.prototype.setData, outputFormat is " + outputFormat);
+                this.style.setOutputFormat(outputFormat);
+			          this.styleClass = getStyle.class;
+			          this.style.setLangTagsForCslTransliteration(data.prefs.citationTransliteration);
+			          this.style.setLangTagsForCslTranslation(data.prefs.citationTranslation);
+			          this.style.setLangTagsForCslSort(data.prefs.citationSort);
+			          this.style.setLangPrefsForCites(data.prefs, function(key){return 'citationLangPrefs'+key;});
+			          this.style.setLangPrefsForCiteAffixes(data.prefs.citationAffixes);
+		        } catch (e) {
+			          Zotero.logError(e);
+			          throw new Zotero.Exception.Alert("integration.error.invalidStyle");
+		        }
+		        return true;
+	      } else if (oldStyle) {
+		        data.style = oldStyle;
+	      }
+	      return false;
+    }));
+    propachiUnpatch.push(Zotero.Integration.Session.prototype.setData.unpatch);
+
+    propachiNpmMonkeypatch(Zotero.Integration.Bibliography.prototype, 'getCiteprocBibliography', function(original, citeproc) {
+        if (Zotero.Utilities.isEmpty(Zotero.Integration.currentSession.citationsByItemID)) {
+			      throw new Error("Attempting to generate bibliography without having updated processor items");
+		    };
+		    if (!this.dataLoaded) {
+			      throw new Error("Attempting to generate bibliography without having loaded item data");
+		    }
+
+		    Zotero.debug(`Integration: style.updateUncitedItems ${Array.from(this.uncitedItemIDs.values()).toSource()}`);
+		    citeproc.updateUncitedItems(Array.from(this.uncitedItemIDs.values()));
+        if (Zotero.Integration.currentSession.data.prefs.outputFormat === undefined) {
+            Zotero.debug("Bibliograpy.prototype.getCiteprocBibliography, Zotero.Integration.currentSession.data.prefs.outputFormat is undefined!");
+        }
+        var outputFormat = Zotero.Integration.currentSession.data.prefs["outputFormat"] || 'rtf';
+        Zotero.debug("Bibliograpy.prototype.getCiteprocBibliography, outputFormat is " + outputFormat);
+		    citeproc.setOutputFormat(outputFormat);
+		    let bibliography = citeproc.makeBibliography();
+		    Zotero.Cite.removeFromBibliography(bibliography, this.omittedItemIDs);
+
+		    for (let i in bibliography[0].entry_ids) {
+			      if (bibliography[0].entry_ids[i].length != 1) continue;
+			      let itemID = bibliography[0].entry_ids[i][0];
+			      if (itemID in this.customEntryText) {
+				        bibliography[1][i] = this.customEntryText[itemID];
+			      }
+		    }
+		    return bibliography;
+    });
+    propachiUnpatch.push(Zotero.Integration.Bibliography.prototype.getCiteprocBibliography.unpatch);
 
     /**
      * Copied and modified from:
